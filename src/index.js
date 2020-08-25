@@ -5,14 +5,43 @@ const whoops = require('whoops')
 const ParseProxyError = whoops('ParseProxyError')
 
 module.exports = proxy => {
-  if (typeof proxy !== 'string' || !proxy) return undefined
+  if (!proxy) return undefined
+  if (typeof proxy === 'object' && proxy.__parsed__) return proxy
 
   try {
-    let { username, password, hostname, protocol, port } = new URL(proxy)
+    const {
+      username,
+      password,
+      hostname,
+      protocol: rawProtocol,
+      port
+    } = new URL(proxy)
+
     const auth = `${username}:${password}`
-    protocol = protocol.replace(':', '')
-    const toString = () => `${protocol}://${auth}@${hostname}:${port}`
-    return { username, password, hostname, protocol, port, auth, toString }
+    const protocol = rawProtocol.replace(':', '')
+
+    const proxyObj = {
+      username,
+      password,
+      hostname,
+      protocol,
+      port,
+      auth
+    }
+
+    Object.defineProperty(proxyObj, '__parsed__', {
+      enumerable: false,
+      writable: false,
+      value: true
+    })
+
+    Object.defineProperty(proxyObj, 'toString', {
+      enumerable: false,
+      writable: false,
+      value: () => `${protocol}://${auth}@${hostname}:${port}`
+    })
+
+    return proxyObj
   } catch (err) {
     throw new ParseProxyError({
       message: `The value \`${proxy}\` can't be parsed as proxy`,

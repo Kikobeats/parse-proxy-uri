@@ -36,6 +36,13 @@ test('valid (https)', t => {
   t.is(parsedProxy.toString(), str)
 })
 
+test('prevent reparsing a proxy object', t => {
+  const str = 'https://username:password@foo:1337'
+  const proxyOne = parseProxy(str)
+  const proxyTwo = parseProxy(proxyOne)
+  t.deepEqual(proxyOne, proxyTwo)
+})
+
 test('throw a qualified error', t => {
   const error = t.throws(() => {
     parseProxy('foo')
