@@ -2,7 +2,7 @@
   "name": "parse-proxy",
   "description": "Lightweight module for parsing a proxy URI",
   "homepage": "https://nicedoc.io/Kikobeats/parse-proxy",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "main": "src/index.js",
   "author": {
     "email": "josefrancisco.verdu@gmail.com",
