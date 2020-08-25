@@ -1,7 +1,7 @@
 {
-  "name": "parse-proxy",
+  "name": "parse-proxy-uri",
   "description": "Lightweight module for parsing a proxy URI",
-  "homepage": "https://nicedoc.io/Kikobeats/parse-proxy",
+  "homepage": "https://nicedoc.io/Kikobeats/parse-proxy-uri",
   "version": "1.0.0",
   "main": "src/index.js",
   "author": {
@@ -11,10 +11,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Kikobeats/parse-proxy.git"
+    "url": "git+https://github.com/Kikobeats/parse-proxy-uri.git"
   },
   "bugs": {
-    "url": "https://github.com/Kikobeats/parse-proxy/issues"
+    "url": "https://github.com/Kikobeats/parse-proxy-uri/issues"
   },
   "keywords": [
     "parse",
