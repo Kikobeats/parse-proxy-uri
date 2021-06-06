@@ -10,12 +10,15 @@ module.exports = proxy => {
 
   try {
     const {
-      username,
-      password,
+      username: encodedUsername,
+      password: encodedPassword,
       hostname,
       protocol: rawProtocol,
       port
     } = new URL(proxy)
+
+    const username = decodeURIComponent(encodedUsername)
+    const password = decodeURIComponent(encodedPassword)
 
     const auth = `${username}:${password}`
     const protocol = rawProtocol.replace(':', '')

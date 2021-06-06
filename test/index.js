@@ -10,7 +10,7 @@ test('invalid', t => {
   t.is(parseProxy(''), undefined)
 })
 
-test('valid (http)', t => {
+test('valid HTTP proxy uri', t => {
   const str = 'http://username:password@foo:1337'
   const parsedProxy = parseProxy(str)
 
@@ -23,7 +23,7 @@ test('valid (http)', t => {
   t.is(parsedProxy.toString(), str)
 })
 
-test('valid (https)', t => {
+test('valid HTTPS proxy uri', t => {
   const str = 'https://username:password@foo:1337'
   const parsedProxy = parseProxy(str)
 
@@ -33,6 +33,32 @@ test('valid (https)', t => {
   t.is(parsedProxy.protocol, 'https')
   t.is(parsedProxy.port, '1337')
   t.is(parsedProxy.auth, 'username:password')
+  t.is(parsedProxy.toString(), str)
+})
+
+test('valid socks5 proxy uri', t => {
+  const str = 'socks5://username:password@foo:1337'
+  const parsedProxy = parseProxy(str)
+
+  t.is(parsedProxy.username, 'username')
+  t.is(parsedProxy.password, 'password')
+  t.is(parsedProxy.hostname, 'foo')
+  t.is(parsedProxy.protocol, 'socks5')
+  t.is(parsedProxy.port, '1337')
+  t.is(parsedProxy.auth, 'username:password')
+  t.is(parsedProxy.toString(), str)
+})
+
+test('decode HTML chars', t => {
+  const str = 'socks5://foo=bar&hello=world:p@ssw=1+$$@foo:1337'
+  const parsedProxy = parseProxy(str)
+
+  t.is(parsedProxy.username, 'foo=bar&hello=world')
+  t.is(parsedProxy.password, 'p@ssw=1+$$')
+  t.is(parsedProxy.hostname, 'foo')
+  t.is(parsedProxy.protocol, 'socks5')
+  t.is(parsedProxy.port, '1337')
+  t.is(parsedProxy.auth, 'foo=bar&hello=world:p@ssw=1+$$')
   t.is(parsedProxy.toString(), str)
 })
 
