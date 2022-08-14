@@ -10,11 +10,12 @@ module.exports = proxy => {
 
   try {
     const {
-      username: encodedUsername,
-      password: encodedPassword,
+      host,
       hostname,
+      password: encodedPassword,
+      port,
       protocol: rawProtocol,
-      port
+      username: encodedUsername
     } = new URL(proxy)
 
     const username = decodeURIComponent(encodedUsername)
@@ -24,12 +25,13 @@ module.exports = proxy => {
     const protocol = rawProtocol.replace(':', '')
 
     const proxyObj = {
-      username,
-      password,
+      auth,
+      host,
       hostname,
-      protocol,
+      password,
       port,
-      auth
+      protocol,
+      username
     }
 
     Object.defineProperty(proxyObj, '__parsed__', {
@@ -41,7 +43,7 @@ module.exports = proxy => {
     Object.defineProperty(proxyObj, 'toString', {
       enumerable: false,
       writable: false,
-      value: () => `${protocol}://${auth}@${hostname}:${port}`
+      value: () => `${protocol}://${auth}@${host}`
     })
 
     return proxyObj
