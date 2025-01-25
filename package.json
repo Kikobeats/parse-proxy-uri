@@ -1,7 +1,7 @@
 {
   "name": "parse-proxy-uri",
   "description": "Lightweight module for parsing a proxy URI",
-  "homepage": "https://nicedoc.io/Kikobeats/parse-proxy-uri",
+  "homepage": "https://github.com/Kikobeats/parse-proxy-uri",
   "version": "1.0.10",
   "main": "src/index.js",
   "author": {
@@ -27,15 +27,14 @@
   "devDependencies": {
     "@commitlint/cli": "latest",
     "@commitlint/config-conventional": "latest",
+    "@ksmithut/prettier-standard": "latest",
     "ava": "latest",
     "c8": "latest",
     "ci-publish": "latest",
-    "conventional-github-releaser": "latest",
     "finepack": "latest",
     "git-authors-cli": "latest",
+    "github-generate-release": "latest",
     "nano-staged": "latest",
-    "npm-check-updates": "latest",
-    "prettier-standard": "latest",
     "simple-git-hooks": "latest",
     "standard": "latest",
     "standard-markdown": "latest",
@@ -49,28 +48,32 @@
   ],
   "scripts": {
     "clean": "rm -rf node_modules",
-    "contributors": "(git-authors-cli && finepack && git add package.json && git commit -m 'build: contributors' --no-verify) || true",
+    "contributors": "(npx git-authors-cli && npx finepack && git add package.json && git commit -m 'build: contributors' --no-verify) || true",
     "coverage": "nyc report --reporter=text-lcov | coveralls",
     "lint": "standard-markdown README.md && standard",
     "postrelease": "npm run release:tags && npm run release:github && (ci-publish || npm publish --access=public)",
     "prerelease": "npm run update:check && npm run contributors",
     "pretest": "npm run lint",
     "release": "standard-version -a",
-    "release:github": "conventional-github-releaser -p angular",
+    "release:github": "github-generate-release",
     "release:tags": "git push --follow-tags origin HEAD:master",
-    "test": "c8 ava",
-    "update": "ncu -u",
-    "update:check": "ncu -- --error-level 2"
+    "test": "c8 ava"
   },
   "license": "MIT",
   "commitlint": {
     "extends": [
       "@commitlint/config-conventional"
-    ]
+    ],
+    "rules": {
+      "body-max-line-length": [
+        0
+      ]
+    }
   },
   "nano-staged": {
-    "*.js,!*.min.js,": [
-      "prettier-standard"
+    "*.js": [
+      "prettier-standard",
+      "standard --fix"
     ],
     "*.md": [
       "standard-markdown"
