@@ -21,9 +21,6 @@
     "proxy",
     "uri"
   ],
-  "dependencies": {
-    "whoops": "~4.1.0"
-  },
   "devDependencies": {
     "@commitlint/cli": "latest",
     "@commitlint/config-conventional": "latest",

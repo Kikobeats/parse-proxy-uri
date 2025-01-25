@@ -1,8 +1,16 @@
 'use strict'
 
-const whoops = require('whoops')
-
-const ParseProxyError = whoops('ParseProxyError')
+class ParseProxyError extends Error {
+  constructor (props) {
+    super()
+    this.name = 'ParseProxyError'
+    Object.assign(this, props)
+    this.description = this.message
+    this.message = this.code
+      ? `${this.code}, ${this.description}`
+      : this.description
+  }
+}
 
 module.exports = proxy => {
   if (!proxy) return undefined

@@ -74,10 +74,7 @@ test('prevent reparsing a proxy object', t => {
 })
 
 test('throw a qualified error', t => {
-  const error = t.throws(() => {
-    parseProxy('foo')
-  })
-
+  const error = t.throws(() => parseProxy('foo'))
   t.is(error.message, "INVALID_PROXY, The value `foo` can't be parsed as proxy")
   t.is(error.code, 'INVALID_PROXY')
 })
