@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.0.0](https://github.com/Kikobeats/parse-proxy-uri/compare/v1.0.10...v2.0.0) (2025-01-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* extends from URL
+
+### Features
+
+* extends from URL ([cb6f677](https://github.com/Kikobeats/parse-proxy-uri/commit/cb6f6770f5d7af120cf563a15b791ea5df8029d1))
+
+
+### Bug Fixes
+
+* **ci:** remove update:check ([4be8dcf](https://github.com/Kikobeats/parse-proxy-uri/commit/4be8dcf3b9465cf5ca2b0335511ce979dba566cb))
+
 ### 1.0.10 (2023-10-24)
 
 ### 1.0.9 (2023-09-05)
