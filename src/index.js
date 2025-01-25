@@ -6,9 +6,40 @@ class ParseProxyError extends Error {
     this.name = 'ParseProxyError'
     Object.assign(this, props)
     this.description = this.message
-    this.message = this.code
-      ? `${this.code}, ${this.description}`
-      : this.description
+    this.message = `${this.code}, ${this.description}`
+  }
+}
+
+class ProxyURL extends URL {
+  constructor (proxy) {
+    super(proxy)
+
+    Object.defineProperty(this, 'username', {
+      enumerable: true,
+      writable: false,
+      value: decodeURIComponent(this.username)
+    })
+
+    Object.defineProperty(this, 'password', {
+      enumerable: true,
+      writable: false,
+      value: decodeURIComponent(this.password)
+    })
+
+    this.auth = `${this.username}:${this.password}`
+
+    Object.defineProperty(this, '__parsed__', {
+      enumerable: false,
+      writable: false,
+      value: true
+    })
+
+    Object.defineProperty(this, 'toString', {
+      enumerable: false,
+      writable: false,
+      value: () =>
+        `${this.protocol}//${this.username}:${this.password}@${this.host}`
+    })
   }
 }
 
@@ -17,44 +48,7 @@ module.exports = proxy => {
   if (typeof proxy === 'object' && proxy.__parsed__) return proxy
 
   try {
-    const {
-      host,
-      hostname,
-      password: encodedPassword,
-      port,
-      protocol: rawProtocol,
-      username: encodedUsername
-    } = new URL(proxy)
-
-    const username = decodeURIComponent(encodedUsername)
-    const password = decodeURIComponent(encodedPassword)
-
-    const auth = `${username}:${password}`
-    const protocol = rawProtocol.replace(':', '')
-
-    const proxyObj = {
-      auth,
-      host,
-      hostname,
-      password,
-      port,
-      protocol,
-      username
-    }
-
-    Object.defineProperty(proxyObj, '__parsed__', {
-      enumerable: false,
-      writable: false,
-      value: true
-    })
-
-    Object.defineProperty(proxyObj, 'toString', {
-      enumerable: false,
-      writable: false,
-      value: () => `${protocol}://${auth}@${host}`
-    })
-
-    return proxyObj
+    return new ProxyURL(proxy)
   } catch (err) {
     throw new ParseProxyError({
       message: `The value \`${proxy}\` can't be parsed as proxy`,
@@ -62,3 +56,5 @@ module.exports = proxy => {
     })
   }
 }
+
+module.exports.ProxyURL = ProxyURL
