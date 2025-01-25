@@ -4,6 +4,8 @@ const test = require('ava')
 
 const parseProxy = require('..')
 
+const { ProxyURL } = parseProxy
+
 test('invalid', t => {
   t.is(parseProxy(), undefined)
   t.is(parseProxy(null), undefined)
@@ -18,10 +20,13 @@ test('valid HTTP proxy uri', t => {
   t.is(parsedProxy.password, 'password')
   t.is(parsedProxy.hostname, 'foo')
   t.is(parsedProxy.host, 'foo:1337')
-  t.is(parsedProxy.protocol, 'http')
+  t.is(parsedProxy.protocol, 'http:')
   t.is(parsedProxy.port, '1337')
   t.is(parsedProxy.auth, 'username:password')
   t.is(parsedProxy.toString(), str)
+
+  t.true(parsedProxy instanceof URL)
+  t.true(parsedProxy instanceof ProxyURL)
 })
 
 test('valid HTTPS proxy uri', t => {
@@ -32,10 +37,13 @@ test('valid HTTPS proxy uri', t => {
   t.is(parsedProxy.password, 'password')
   t.is(parsedProxy.hostname, 'foo')
   t.is(parsedProxy.host, 'foo:1337')
-  t.is(parsedProxy.protocol, 'https')
+  t.is(parsedProxy.protocol, 'https:')
   t.is(parsedProxy.port, '1337')
   t.is(parsedProxy.auth, 'username:password')
   t.is(parsedProxy.toString(), str)
+
+  t.true(parsedProxy instanceof URL)
+  t.true(parsedProxy instanceof ProxyURL)
 })
 
 test('valid socks5 proxy uri', t => {
@@ -46,10 +54,13 @@ test('valid socks5 proxy uri', t => {
   t.is(parsedProxy.password, 'password')
   t.is(parsedProxy.hostname, 'foo')
   t.is(parsedProxy.host, 'foo:1337')
-  t.is(parsedProxy.protocol, 'socks5')
+  t.is(parsedProxy.protocol, 'socks5:')
   t.is(parsedProxy.port, '1337')
   t.is(parsedProxy.auth, 'username:password')
   t.is(parsedProxy.toString(), str)
+
+  t.true(parsedProxy instanceof URL)
+  t.true(parsedProxy instanceof ProxyURL)
 })
 
 test('decode HTML chars', t => {
@@ -60,10 +71,13 @@ test('decode HTML chars', t => {
   t.is(parsedProxy.password, 'p@ssw=1+$$')
   t.is(parsedProxy.hostname, 'foo')
   t.is(parsedProxy.host, 'foo:1337')
-  t.is(parsedProxy.protocol, 'socks5')
+  t.is(parsedProxy.protocol, 'socks5:')
   t.is(parsedProxy.port, '1337')
   t.is(parsedProxy.auth, 'foo=bar&hello=world:p@ssw=1+$$')
   t.is(parsedProxy.toString(), str)
+
+  t.true(parsedProxy instanceof URL)
+  t.true(parsedProxy instanceof ProxyURL)
 })
 
 test('prevent reparsing a proxy object', t => {
