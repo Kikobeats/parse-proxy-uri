@@ -49,7 +49,7 @@ module.exports = proxy => {
 
   try {
     return new ProxyURL(proxy)
-  } catch (err) {
+  } catch (_) {
     throw new ParseProxyError({
       message: `The value \`${proxy}\` can't be parsed as proxy`,
       code: 'INVALID_PROXY'
