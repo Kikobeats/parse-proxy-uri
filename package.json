@@ -32,7 +32,10 @@
     "finepack": "latest",
     "git-authors-cli": "latest",
     "github-generate-release": "latest",
+    "got": "11",
+    "got-scraping": "4",
     "nano-staged": "latest",
+    "proxy-chain": "latest",
     "simple-git-hooks": "latest",
     "standard": "latest",
     "standard-markdown": "latest",
@@ -42,7 +45,7 @@
     "node": ">= 10"
   },
   "files": [
-    "index.js"
+    "src/index.js"
   ],
   "scripts": {
     "clean": "rm -rf node_modules",
@@ -55,7 +58,7 @@
     "release": "standard-version -a",
     "release:github": "github-generate-release",
     "release:tags": "git push --follow-tags origin HEAD:master",
-    "test": "c8 ava"
+    "test": "node scripts/patch-got-scraping.mjs && c8 ava"
   },
   "license": "MIT",
   "commitlint": {
