@@ -128,7 +128,7 @@ test('got integration', async t => {
 
   const { gotScraping } = await import('got-scraping')
 
-  await got('https://example.com', {
+  await got('http://example.com', {
     agent: await gotScraping.getAgents(proxyUrl.toString(), false)
   })
 
