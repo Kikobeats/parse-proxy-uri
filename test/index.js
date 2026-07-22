@@ -118,6 +118,16 @@ test('toString omits empty credentials', t => {
   t.is(parsedProxy.toString(), 'http://proxy.example:8080')
 })
 
+test('toString omits colon when only username is present', t => {
+  const parsedProxy = parseProxy('http://user@proxy.example:8080')
+  t.is(parsedProxy.toString(), 'http://user@proxy.example:8080')
+})
+
+test('toString keeps password when only password is present', t => {
+  const parsedProxy = parseProxy('http://:pass@proxy.example:8080')
+  t.is(parsedProxy.toString(), 'http://:pass@proxy.example:8080')
+})
+
 test('prevent reparsing a proxy object', t => {
   const str = 'https://username:password@foo:1337'
   const proxyOne = parseProxy(str)
