@@ -1,7 +1,7 @@
 'use strict'
 
 const ProxyChain = require('proxy-chain')
-const test = require('ava')
+const test = require('ava').default
 const got = require('got')
 
 const parseProxy = require('..')
