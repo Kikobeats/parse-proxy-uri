@@ -14,6 +14,13 @@ class ProxyURL extends URL {
   constructor (proxy) {
     super(proxy)
 
+    // Capture the percent-encoded credentials before shadowing the accessors
+    // below with decoded values. Serializing the decoded values in `toString`
+    // would corrupt proxies whose credentials contain reserved characters
+    // (@, :, /, etc.).
+    const encodedUsername = this.username
+    const encodedPassword = this.password
+
     Object.defineProperty(this, 'username', {
       enumerable: true,
       writable: false,
@@ -37,8 +44,15 @@ class ProxyURL extends URL {
     Object.defineProperty(this, 'toString', {
       enumerable: false,
       writable: false,
-      value: () =>
-        `${this.protocol}//${this.username}:${this.password}@${this.host}`
+      value: () => {
+        if (!encodedUsername && !encodedPassword) {
+          return `${this.protocol}//${this.host}`
+        }
+        const userinfo = encodedPassword
+          ? `${encodedUsername}:${encodedPassword}`
+          : encodedUsername
+        return `${this.protocol}//${userinfo}@${this.host}`
+      }
     })
   }
 }

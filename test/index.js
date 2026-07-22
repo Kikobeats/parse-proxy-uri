@@ -1,7 +1,7 @@
 'use strict'
 
 const ProxyChain = require('proxy-chain')
-const test = require('ava')
+const test = require('ava').default
 const got = require('got')
 
 const parseProxy = require('..')
@@ -87,10 +87,45 @@ test('decode HTML chars', t => {
   t.is(parsedProxy.protocol, 'socks5:')
   t.is(parsedProxy.port, '1337')
   t.is(parsedProxy.auth, 'foo=bar&hello=world:p@ssw=1+$$')
-  t.is(parsedProxy.toString(), str)
+  t.is(
+    parsedProxy.toString(),
+    'socks5://foo%3Dbar&hello%3Dworld:p%40ssw%3D1+$$@foo:1337'
+  )
 
   t.true(parsedProxy instanceof URL)
   t.true(parsedProxy instanceof ProxyURL)
+})
+
+test('toString percent-encodes reserved characters in credentials', t => {
+  const parsedProxy = parseProxy(
+    'http://user%3Aname:pass%40word%2Fpath@proxy.example:8080'
+  )
+
+  t.is(parsedProxy.username, 'user:name')
+  t.is(parsedProxy.password, 'pass@word/path')
+  t.is(
+    parsedProxy.toString(),
+    'http://user%3Aname:pass%40word%2Fpath@proxy.example:8080'
+  )
+
+  const roundTrip = parseProxy(parsedProxy.toString())
+  t.is(roundTrip.username, 'user:name')
+  t.is(roundTrip.password, 'pass@word/path')
+})
+
+test('toString omits empty credentials', t => {
+  const parsedProxy = parseProxy('http://proxy.example:8080')
+  t.is(parsedProxy.toString(), 'http://proxy.example:8080')
+})
+
+test('toString omits colon when only username is present', t => {
+  const parsedProxy = parseProxy('http://user@proxy.example:8080')
+  t.is(parsedProxy.toString(), 'http://user@proxy.example:8080')
+})
+
+test('toString keeps password when only password is present', t => {
+  const parsedProxy = parseProxy('http://:pass@proxy.example:8080')
+  t.is(parsedProxy.toString(), 'http://:pass@proxy.example:8080')
 })
 
 test('prevent reparsing a proxy object', t => {
