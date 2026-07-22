@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### 2.0.7 (2026-07-22)
+
+
+### Bug Fixes
+
+* prevent credential corruption in ProxyURL#toString ([#21](https://github.com/Kikobeats/parse-proxy-uri/issues/21)) ([cb7348d](https://github.com/Kikobeats/parse-proxy-uri/commit/cb7348d1954c46722c9362e923791884ee5e2708))
+
 ### 2.0.6 (2026-04-14)
 
 ### 2.0.5 (2025-11-22)
