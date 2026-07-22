@@ -37,8 +37,26 @@ class ProxyURL extends URL {
     Object.defineProperty(this, 'toString', {
       enumerable: false,
       writable: false,
-      value: () =>
-        `${this.protocol}//${this.username}:${this.password}@${this.host}`
+      value: () => {
+        // Read percent-encoded credentials from the URL internal slots.
+        // The own `username`/`password` properties are decoded for callers,
+        // but serializing those decoded values would corrupt proxies whose
+        // credentials contain reserved characters (@, :, /, etc.).
+        const username = Object.getOwnPropertyDescriptor(
+          URL.prototype,
+          'username'
+        ).get.call(this)
+        const password = Object.getOwnPropertyDescriptor(
+          URL.prototype,
+          'password'
+        ).get.call(this)
+
+        if (!username && !password) {
+          return `${this.protocol}//${this.host}`
+        }
+
+        return `${this.protocol}//${username}:${password}@${this.host}`
+      }
     })
   }
 }
