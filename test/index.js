@@ -128,6 +128,33 @@ test('toString keeps password when only password is present', t => {
   t.is(parsedProxy.toString(), 'http://:pass@proxy.example:8080')
 })
 
+test('auth is empty when credentials are omitted', t => {
+  const parsedProxy = parseProxy('http://proxy.example:8080')
+  t.is(parsedProxy.auth, '')
+  t.is(parsedProxy.username, '')
+  t.is(parsedProxy.password, '')
+})
+
+test('reject schemeless host:port that WHATWG treats as a custom scheme', t => {
+  for (const input of ['proxy.example:8080', 'myproxy:3128', 'localhost:8080']) {
+    const error = t.throws(() => parseProxy(input), { instanceOf: Error })
+    t.is(error.code, 'INVALID_PROXY')
+  }
+})
+
+test('reject http:port integer-IPv4 misparse', t => {
+  // WHATWG parses `http:8080` as http://0.0.31.144/ — must not become a proxy.
+  const error = t.throws(() => parseProxy('http:8080'), { instanceOf: Error })
+  t.is(error.code, 'INVALID_PROXY')
+})
+
+test('reject proxy URIs with an empty host', t => {
+  for (const input of ['socks5://', 'http://', 'https://']) {
+    const error = t.throws(() => parseProxy(input), { instanceOf: Error })
+    t.is(error.code, 'INVALID_PROXY')
+  }
+})
+
 test('prevent reparsing a proxy object', t => {
   const str = 'https://username:password@foo:1337'
   const proxyOne = parseProxy(str)

@@ -12,7 +12,18 @@ class ParseProxyError extends Error {
 
 class ProxyURL extends URL {
   constructor (proxy) {
+    // WHATWG URL treats `host:port` as a custom scheme (empty host) and
+    // `http:8080` as the IPv4 integer host 0.0.31.144. Require an explicit
+    // `://` authority so we never return a silently misrouted proxy.
+    if (typeof proxy !== 'string' || !proxy.includes('://')) {
+      throw new TypeError('Invalid proxy')
+    }
+
     super(proxy)
+
+    if (!this.hostname) {
+      throw new TypeError('Invalid proxy')
+    }
 
     // Capture the percent-encoded credentials before shadowing the accessors
     // below with decoded values. Serializing the decoded values in `toString`
@@ -33,7 +44,12 @@ class ProxyURL extends URL {
       value: decodeURIComponent(this.password)
     })
 
-    this.auth = `${this.username}:${this.password}`
+    // Match toString(): omit credentials entirely when both are empty so
+    // truthy checks on `auth` do not force a blank Proxy-Authorization.
+    this.auth =
+      this.username || this.password
+        ? `${this.username}:${this.password}`
+        : ''
 
     Object.defineProperty(this, '__parsed__', {
       enumerable: false,
