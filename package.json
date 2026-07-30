@@ -1,6 +1,6 @@
 {
   "name": "parse-proxy-uri",
-  "description": "Lightweight module for parsing a proxy URI",
+  "description": "Parse proxy URIs into host, port, auth, and protocol — supports HTTP, HTTPS, and SOCKS schemes.",
   "homepage": "https://github.com/Kikobeats/parse-proxy-uri",
   "version": "2.0.7",
   "main": "src/index.js",
@@ -18,9 +18,16 @@
     "url": "https://github.com/Kikobeats/parse-proxy-uri/issues"
   },
   "keywords": [
+    "auth",
+    "host",
+    "http",
+    "https",
     "parse",
+    "port",
     "proxy",
-    "uri"
+    "socks",
+    "uri",
+    "url"
   ],
   "devDependencies": {
     "@commitlint/cli": "latest",
