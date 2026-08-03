@@ -141,6 +141,43 @@ test('throw a qualified error', t => {
   t.is(error.code, 'INVALID_PROXY')
 })
 
+test('reject non-canonical IPv4 hosts that WHATWG would rewrite', t => {
+  // Special-scheme IPv4 parser turns these into different addresses (often
+  // loopback/private). A proxy parser must not silently retarget traffic.
+  for (const input of [
+    'http://2130706433:8080',
+    'https://0x7f000001:8080',
+    'http://127.1:8080',
+    'http://00127.0.0.1:8080',
+    'http://user:pass@0300.0250.0001.0001:8080'
+  ]) {
+    const error = t.throws(() => parseProxy(input), { instanceOf: Error })
+    t.is(error.code, 'INVALID_PROXY')
+  }
+})
+
+test('accept canonical dotted-decimal IPv4 hosts', t => {
+  const parsedProxy = parseProxy('http://127.0.0.1:8080')
+  t.is(parsedProxy.hostname, '127.0.0.1')
+  t.is(parsedProxy.toString(), 'http://127.0.0.1:8080')
+})
+
+test('reject path/query/hash that swallow credentials or host', t => {
+  for (const input of [
+    'http://us/er:pass@proxy.example:8080',
+    'http://us?er:pass@proxy.example:8080',
+    'http://us#er:pass@proxy.example:8080',
+    'http://user:p@ss/word@proxy.example:8080',
+    'http://proxy.example:8080/extra',
+    'http://proxy.example:8080?x=1',
+    'http://proxy.example:8080#frag',
+    'socks5://proxy.example:1080/extra'
+  ]) {
+    const error = t.throws(() => parseProxy(input), { instanceOf: Error })
+    t.is(error.code, 'INVALID_PROXY')
+  }
+})
+
 test('got integration', async t => {
   let count = 0
 

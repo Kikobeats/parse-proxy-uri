@@ -1,5 +1,7 @@
 'use strict'
 
+const { isIP } = require('net')
+
 class ParseProxyError extends Error {
   constructor (props) {
     super()
@@ -10,9 +12,46 @@ class ParseProxyError extends Error {
   }
 }
 
+// Pull the hostname token out of the original URI before WHATWG normalizes it.
+// Special schemes rewrite decimal/octal/hex/short IPv4 forms (e.g. 2130706433 →
+// 127.0.0.1), which would silently misroute the proxy if we trusted hostname.
+const rawHostname = proxy => {
+  let authority = proxy.slice(proxy.indexOf('://') + 3)
+  const pathIndex = authority.search(/[/?#]/)
+  const atIndex = authority.indexOf('@')
+
+  if (atIndex !== -1 && (pathIndex === -1 || atIndex < pathIndex)) {
+    authority = authority.slice(atIndex + 1)
+  }
+
+  if (authority.startsWith('[')) {
+    const end = authority.indexOf(']')
+    return end === -1 ? authority : authority.slice(0, end + 1)
+  }
+
+  const hostEnd = authority.search(/[:/?#]/)
+  return hostEnd === -1 ? authority : authority.slice(0, hostEnd)
+}
+
 class ProxyURL extends URL {
   constructor (proxy) {
     super(proxy)
+
+    // Proxy URIs are authority-only. A path/query/hash usually means reserved
+    // characters in userinfo were not percent-encoded, which WHATWG then
+    // treats as the start of the path and drops the real host (e.g.
+    // http://us/er:pass@proxy.example:8080 → host "us").
+    if (
+      (this.pathname !== '' && this.pathname !== '/') ||
+      this.search !== '' ||
+      this.hash !== ''
+    ) {
+      throw new TypeError('Invalid proxy')
+    }
+
+    if (isIP(this.hostname) === 4 && rawHostname(proxy) !== this.hostname) {
+      throw new TypeError('Invalid proxy')
+    }
 
     // Capture the percent-encoded credentials before shadowing the accessors
     // below with decoded values. Serializing the decoded values in `toString`
