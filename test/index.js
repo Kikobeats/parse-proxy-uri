@@ -226,6 +226,18 @@ test('accept canonical dotted-decimal IPv4 hosts', t => {
   t.is(parsedProxy.toString(), 'http://127.0.0.1:8080')
 })
 
+test('accept percent-encoded dots in canonical IPv4 hosts', t => {
+  const parsedProxy = parseProxy('http://127%2E0%2E0%2E1:8080')
+  t.is(parsedProxy.hostname, '127.0.0.1')
+  t.is(parsedProxy.toString(), 'http://127.0.0.1:8080')
+})
+
+test('accept String object proxy URIs', t => {
+  const parsedProxy = parseProxy(Object('http://proxy.example:8080'))
+  t.is(parsedProxy.hostname, 'proxy.example')
+  t.is(parsedProxy.toString(), 'http://proxy.example:8080')
+})
+
 test('reject path/query/hash that swallow credentials or host', t => {
   for (const input of [
     'http://us/er:pass@proxy.example:8080',

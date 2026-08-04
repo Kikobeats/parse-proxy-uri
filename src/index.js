@@ -44,10 +44,11 @@ const rawHostname = proxy => {
 
 class ProxyURL extends URL {
   constructor (proxy) {
-    // WHATWG URL treats `host:port` as a custom scheme (empty host) and
-    // `http:8080` as the IPv4 integer host 0.0.31.144. Require an explicit
-    // `://` authority so we never return a silently misrouted proxy.
-    if (typeof proxy !== 'string' || !proxy.includes('://')) {
+    // Coerce like URL (String objects, etc.), then require an explicit `://`
+    // authority. WHATWG treats `host:port` as a custom scheme (empty host) and
+    // `http:8080` as the IPv4 integer host 0.0.31.144.
+    proxy = String(proxy)
+    if (!proxy.includes('://')) {
       throw new TypeError('Invalid proxy')
     }
 
@@ -69,8 +70,19 @@ class ProxyURL extends URL {
       throw new TypeError('Invalid proxy')
     }
 
-    if (isIP(this.hostname) === 4 && rawHostname(proxy) !== this.hostname) {
-      throw new TypeError('Invalid proxy')
+    // Compare after percent-decoding the raw host token: WHATWG decodes
+    // sequences like `%2E` before IPv4 parsing, so `127%2E0%2E0%2E1` is a
+    // canonical dotted-decimal host, not a rewrite.
+    if (isIP(this.hostname) === 4) {
+      let raw
+      try {
+        raw = decodeURIComponent(rawHostname(proxy))
+      } catch (_) {
+        throw new TypeError('Invalid proxy')
+      }
+      if (raw !== this.hostname) {
+        throw new TypeError('Invalid proxy')
+      }
     }
 
     // Fail fast on malformed percent-escapes so parseProxy still returns
