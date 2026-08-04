@@ -73,6 +73,11 @@ class ProxyURL extends URL {
       throw new TypeError('Invalid proxy')
     }
 
+    // Fail fast on malformed percent-escapes so parseProxy still returns
+    // INVALID_PROXY instead of a late URIError from the getters below.
+    decodeURIComponent(usernameGetter.call(this))
+    decodeURIComponent(passwordGetter.call(this))
+
     // Expose decoded credentials, but always read them from the underlying URL
     // slots. Capturing them once (and freezing the values) desyncs from later
     // href/host mutations: toString() would keep shipping the old userinfo to

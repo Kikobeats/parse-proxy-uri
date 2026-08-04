@@ -135,6 +135,17 @@ test('auth is empty when credentials are omitted', t => {
   t.is(parsedProxy.password, '')
 })
 
+test('reject malformed percent-escapes in credentials', t => {
+  for (const input of [
+    'http://user%zz@proxy.example:8080',
+    'http://user:%zz@proxy.example:8080',
+    'http://a%GG:b@proxy.example:8080'
+  ]) {
+    const error = t.throws(() => parseProxy(input), { instanceOf: Error })
+    t.is(error.code, 'INVALID_PROXY')
+  }
+})
+
 test('credentials stay in sync when href or host is mutated', t => {
   const parsedProxy = parseProxy('http://alice:TopSecret@trusted.proxy:8443')
 
