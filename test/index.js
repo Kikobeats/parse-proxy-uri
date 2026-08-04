@@ -19,6 +19,13 @@ const getProxyUrl = proxy => {
   )
 }
 
+const assertInvalidProxies = (t, inputs) => {
+  for (const input of inputs) {
+    const error = t.throws(() => parseProxy(input), { instanceOf: Error })
+    t.is(error.code, 'INVALID_PROXY')
+  }
+}
+
 test('invalid', t => {
   t.is(parseProxy(), undefined)
   t.is(parseProxy(null), undefined)
@@ -136,14 +143,11 @@ test('auth is empty when credentials are omitted', t => {
 })
 
 test('reject malformed percent-escapes in credentials', t => {
-  for (const input of [
+  assertInvalidProxies(t, [
     'http://user%zz@proxy.example:8080',
     'http://user:%zz@proxy.example:8080',
     'http://a%GG:b@proxy.example:8080'
-  ]) {
-    const error = t.throws(() => parseProxy(input), { instanceOf: Error })
-    t.is(error.code, 'INVALID_PROXY')
-  }
+  ])
 })
 
 test('credentials stay in sync when href or host is mutated', t => {
@@ -169,27 +173,19 @@ test('credentials stay in sync when href or host is mutated', t => {
 })
 
 test('reject schemeless host:port that WHATWG treats as a custom scheme', t => {
-  for (const input of [
+  assertInvalidProxies(t, [
     'proxy.example:8080',
     'myproxy:3128',
     'localhost:8080'
-  ]) {
-    const error = t.throws(() => parseProxy(input), { instanceOf: Error })
-    t.is(error.code, 'INVALID_PROXY')
-  }
+  ])
 })
 
 test('reject http:port integer-IPv4 misparse', t => {
-  // WHATWG parses `http:8080` as http://0.0.31.144/ — must not become a proxy.
-  const error = t.throws(() => parseProxy('http:8080'), { instanceOf: Error })
-  t.is(error.code, 'INVALID_PROXY')
+  assertInvalidProxies(t, ['http:8080'])
 })
 
 test('reject proxy URIs with an empty host', t => {
-  for (const input of ['socks5://', 'http://', 'https://']) {
-    const error = t.throws(() => parseProxy(input), { instanceOf: Error })
-    t.is(error.code, 'INVALID_PROXY')
-  }
+  assertInvalidProxies(t, ['socks5://', 'http://', 'https://'])
 })
 
 test('prevent reparsing a proxy object', t => {
@@ -206,18 +202,13 @@ test('throw a qualified error', t => {
 })
 
 test('reject non-canonical IPv4 hosts that WHATWG would rewrite', t => {
-  // Special-scheme IPv4 parser turns these into different addresses (often
-  // loopback/private). A proxy parser must not silently retarget traffic.
-  for (const input of [
+  assertInvalidProxies(t, [
     'http://2130706433:8080',
     'https://0x7f000001:8080',
     'http://127.1:8080',
     'http://00127.0.0.1:8080',
     'http://user:pass@0300.0250.0001.0001:8080'
-  ]) {
-    const error = t.throws(() => parseProxy(input), { instanceOf: Error })
-    t.is(error.code, 'INVALID_PROXY')
-  }
+  ])
 })
 
 test('accept canonical dotted-decimal IPv4 hosts', t => {
@@ -239,7 +230,7 @@ test('accept String object proxy URIs', t => {
 })
 
 test('reject path/query/hash that swallow credentials or host', t => {
-  for (const input of [
+  assertInvalidProxies(t, [
     'http://us/er:pass@proxy.example:8080',
     'http://us?er:pass@proxy.example:8080',
     'http://us#er:pass@proxy.example:8080',
@@ -248,10 +239,7 @@ test('reject path/query/hash that swallow credentials or host', t => {
     'http://proxy.example:8080?x=1',
     'http://proxy.example:8080#frag',
     'socks5://proxy.example:1080/extra'
-  ]) {
-    const error = t.throws(() => parseProxy(input), { instanceOf: Error })
-    t.is(error.code, 'INVALID_PROXY')
-  }
+  ])
 })
 
 test('got integration', async t => {

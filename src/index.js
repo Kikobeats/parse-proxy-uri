@@ -21,9 +21,7 @@ class ParseProxyError extends Error {
   }
 }
 
-// Pull the hostname token out of the original URI before WHATWG normalizes it.
-// Special schemes rewrite decimal/octal/hex/short IPv4 forms (e.g. 2130706433 →
-// 127.0.0.1), which would silently misroute the proxy if we trusted hostname.
+// Host token before WHATWG IPv4 normalization (e.g. 2130706433 → 127.0.0.1).
 const rawHostname = proxy => {
   let authority = proxy.slice(proxy.indexOf('://') + 3)
   const pathIndex = authority.search(/[/?#]/)
@@ -33,20 +31,13 @@ const rawHostname = proxy => {
     authority = authority.slice(atIndex + 1)
   }
 
-  if (authority.startsWith('[')) {
-    const end = authority.indexOf(']')
-    return end === -1 ? authority : authority.slice(0, end + 1)
-  }
-
   const hostEnd = authority.search(/[:/?#]/)
   return hostEnd === -1 ? authority : authority.slice(0, hostEnd)
 }
 
 class ProxyURL extends URL {
   constructor (proxy) {
-    // Coerce like URL (String objects, etc.), then require an explicit `://`
-    // authority. WHATWG treats `host:port` as a custom scheme (empty host) and
-    // `http:8080` as the IPv4 integer host 0.0.31.144.
+    // Require `://` — WHATWG turns `host:port` / `http:8080` into wrong hosts.
     proxy = String(proxy)
     if (!proxy.includes('://')) {
       throw new TypeError('Invalid proxy')
@@ -54,15 +45,8 @@ class ProxyURL extends URL {
 
     super(proxy)
 
-    if (!this.hostname) {
-      throw new TypeError('Invalid proxy')
-    }
-
-    // Proxy URIs are authority-only. A path/query/hash usually means reserved
-    // characters in userinfo were not percent-encoded, which WHATWG then
-    // treats as the start of the path and drops the real host (e.g.
-    // http://us/er:pass@proxy.example:8080 → host "us").
     if (
+      !this.hostname ||
       (this.pathname !== '' && this.pathname !== '/') ||
       this.search !== '' ||
       this.hash !== ''
@@ -70,48 +54,34 @@ class ProxyURL extends URL {
       throw new TypeError('Invalid proxy')
     }
 
-    // Compare after percent-decoding the raw host token: WHATWG decodes
-    // sequences like `%2E` before IPv4 parsing, so `127%2E0%2E0%2E1` is a
-    // canonical dotted-decimal host, not a rewrite.
-    if (isIP(this.hostname) === 4) {
-      let raw
-      try {
-        raw = decodeURIComponent(rawHostname(proxy))
-      } catch (_) {
-        throw new TypeError('Invalid proxy')
-      }
-      if (raw !== this.hostname) {
-        throw new TypeError('Invalid proxy')
-      }
+    if (
+      isIP(this.hostname) === 4 &&
+      decodeURIComponent(rawHostname(proxy)) !== this.hostname
+    ) {
+      throw new TypeError('Invalid proxy')
     }
 
-    // Fail fast on malformed percent-escapes so parseProxy still returns
-    // INVALID_PROXY instead of a late URIError from the getters below.
-    decodeURIComponent(usernameGetter.call(this))
-    decodeURIComponent(passwordGetter.call(this))
+    const decoded = getter => decodeURIComponent(getter.call(this))
+    decoded(usernameGetter) // reject malformed escapes at parse time
+    decoded(passwordGetter)
 
-    // Expose decoded credentials, but always read them from the underlying URL
-    // slots. Capturing them once (and freezing the values) desyncs from later
-    // href/host mutations: toString() would keep shipping the old userinfo to
-    // a new host, and username/password/auth would disagree with href.
     Object.defineProperty(this, 'username', {
       enumerable: true,
-      get: () => decodeURIComponent(usernameGetter.call(this))
+      get: () => decoded(usernameGetter)
     })
 
     Object.defineProperty(this, 'password', {
       enumerable: true,
-      get: () => decodeURIComponent(passwordGetter.call(this))
+      get: () => decoded(passwordGetter)
     })
 
-    // Match toString(): omit credentials entirely when both are empty so
-    // truthy checks on `auth` do not force a blank Proxy-Authorization.
     Object.defineProperty(this, 'auth', {
       enumerable: true,
-      get: () =>
-        this.username || this.password
-          ? `${this.username}:${this.password}`
-          : ''
+      get: () => {
+        const user = this.username
+        const pass = this.password
+        return user || pass ? `${user}:${pass}` : ''
+      }
     })
 
     Object.defineProperty(this, '__parsed__', {
@@ -124,8 +94,6 @@ class ProxyURL extends URL {
       enumerable: false,
       writable: false,
       value: () => {
-        // Use the live percent-encoded userinfo so reserved characters round-
-        // trip and mutations of host/href stay consistent.
         const encodedUsername = usernameGetter.call(this)
         const encodedPassword = passwordGetter.call(this)
         if (!encodedUsername && !encodedPassword) {
