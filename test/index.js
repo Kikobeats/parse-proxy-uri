@@ -128,6 +128,29 @@ test('toString keeps password when only password is present', t => {
   t.is(parsedProxy.toString(), 'http://:pass@proxy.example:8080')
 })
 
+test('credentials stay in sync when href or host is mutated', t => {
+  const parsedProxy = parseProxy(
+    'http://alice:TopSecret@trusted.proxy:8443'
+  )
+
+  parsedProxy.hostname = 'other.proxy'
+  t.is(parsedProxy.username, 'alice')
+  t.is(parsedProxy.password, 'TopSecret')
+  t.is(parsedProxy.toString(), 'http://alice:TopSecret@other.proxy:8443')
+
+  parsedProxy.href = 'http://bob:OtherSecret@third.proxy:9443'
+  t.is(parsedProxy.username, 'bob')
+  t.is(parsedProxy.password, 'OtherSecret')
+  t.is(parsedProxy.auth, 'bob:OtherSecret')
+  t.is(parsedProxy.toString(), 'http://bob:OtherSecret@third.proxy:9443')
+  t.is(parsedProxy.href, 'http://bob:OtherSecret@third.proxy:9443/')
+
+  parsedProxy.href = 'http://noproxy.example:8080'
+  t.is(parsedProxy.username, '')
+  t.is(parsedProxy.password, '')
+  t.is(parsedProxy.toString(), 'http://noproxy.example:8080')
+})
+
 test('prevent reparsing a proxy object', t => {
   const str = 'https://username:password@foo:1337'
   const proxyOne = parseProxy(str)

@@ -1,5 +1,10 @@
 'use strict'
 
+const usernameGetter = Object.getOwnPropertyDescriptor(URL.prototype, 'username')
+  .get
+const passwordGetter = Object.getOwnPropertyDescriptor(URL.prototype, 'password')
+  .get
+
 class ParseProxyError extends Error {
   constructor (props) {
     super()
@@ -14,26 +19,24 @@ class ProxyURL extends URL {
   constructor (proxy) {
     super(proxy)
 
-    // Capture the percent-encoded credentials before shadowing the accessors
-    // below with decoded values. Serializing the decoded values in `toString`
-    // would corrupt proxies whose credentials contain reserved characters
-    // (@, :, /, etc.).
-    const encodedUsername = this.username
-    const encodedPassword = this.password
-
+    // Expose decoded credentials, but always read them from the underlying URL
+    // slots. Capturing them once (and freezing the values) desyncs from later
+    // href/host mutations: toString() would keep shipping the old userinfo to
+    // a new host, and username/password/auth would disagree with href.
     Object.defineProperty(this, 'username', {
       enumerable: true,
-      writable: false,
-      value: decodeURIComponent(this.username)
+      get: () => decodeURIComponent(usernameGetter.call(this))
     })
 
     Object.defineProperty(this, 'password', {
       enumerable: true,
-      writable: false,
-      value: decodeURIComponent(this.password)
+      get: () => decodeURIComponent(passwordGetter.call(this))
     })
 
-    this.auth = `${this.username}:${this.password}`
+    Object.defineProperty(this, 'auth', {
+      enumerable: true,
+      get: () => `${this.username}:${this.password}`
+    })
 
     Object.defineProperty(this, '__parsed__', {
       enumerable: false,
@@ -45,6 +48,10 @@ class ProxyURL extends URL {
       enumerable: false,
       writable: false,
       value: () => {
+        // Use the live percent-encoded userinfo so reserved characters round-
+        // trip and mutations of host/href stay consistent.
+        const encodedUsername = usernameGetter.call(this)
+        const encodedPassword = passwordGetter.call(this)
         if (!encodedUsername && !encodedPassword) {
           return `${this.protocol}//${this.host}`
         }
