@@ -2,7 +2,7 @@
   "name": "parse-proxy-uri",
   "description": "Parse proxy URIs into host, port, auth, and protocol — supports HTTP, HTTPS, and SOCKS schemes.",
   "homepage": "https://github.com/Kikobeats/parse-proxy-uri",
-  "version": "2.0.9",
+  "version": "2.0.10",
   "main": "src/index.js",
   "author": {
     "email": "josefrancisco.verdu@gmail.com",
