@@ -1,5 +1,16 @@
 'use strict'
 
+const { isIP } = require('net')
+
+const usernameGetter = Object.getOwnPropertyDescriptor(
+  URL.prototype,
+  'username'
+).get
+const passwordGetter = Object.getOwnPropertyDescriptor(
+  URL.prototype,
+  'password'
+).get
+
 class ParseProxyError extends Error {
   constructor (props) {
     super()
@@ -10,30 +21,68 @@ class ParseProxyError extends Error {
   }
 }
 
+// Host token before WHATWG IPv4 normalization (e.g. 2130706433 → 127.0.0.1).
+const rawHostname = proxy => {
+  let authority = proxy.slice(proxy.indexOf('://') + 3)
+  const pathIndex = authority.search(/[/?#]/)
+  const atIndex = authority.indexOf('@')
+
+  if (atIndex !== -1 && (pathIndex === -1 || atIndex < pathIndex)) {
+    authority = authority.slice(atIndex + 1)
+  }
+
+  const hostEnd = authority.search(/[:/?#]/)
+  return hostEnd === -1 ? authority : authority.slice(0, hostEnd)
+}
+
 class ProxyURL extends URL {
   constructor (proxy) {
+    // Require `://` — WHATWG turns `host:port` / `http:8080` into wrong hosts.
+    proxy = String(proxy)
+    if (!proxy.includes('://')) {
+      throw new TypeError('Invalid proxy')
+    }
+
     super(proxy)
 
-    // Capture the percent-encoded credentials before shadowing the accessors
-    // below with decoded values. Serializing the decoded values in `toString`
-    // would corrupt proxies whose credentials contain reserved characters
-    // (@, :, /, etc.).
-    const encodedUsername = this.username
-    const encodedPassword = this.password
+    if (
+      !this.hostname ||
+      (this.pathname !== '' && this.pathname !== '/') ||
+      this.search !== '' ||
+      this.hash !== ''
+    ) {
+      throw new TypeError('Invalid proxy')
+    }
+
+    if (
+      isIP(this.hostname) === 4 &&
+      decodeURIComponent(rawHostname(proxy)) !== this.hostname
+    ) {
+      throw new TypeError('Invalid proxy')
+    }
+
+    const decoded = getter => decodeURIComponent(getter.call(this))
+    decoded(usernameGetter) // reject malformed escapes at parse time
+    decoded(passwordGetter)
 
     Object.defineProperty(this, 'username', {
       enumerable: true,
-      writable: false,
-      value: decodeURIComponent(this.username)
+      get: () => decoded(usernameGetter)
     })
 
     Object.defineProperty(this, 'password', {
       enumerable: true,
-      writable: false,
-      value: decodeURIComponent(this.password)
+      get: () => decoded(passwordGetter)
     })
 
-    this.auth = `${this.username}:${this.password}`
+    Object.defineProperty(this, 'auth', {
+      enumerable: true,
+      get: () => {
+        const user = this.username
+        const pass = this.password
+        return user || pass ? `${user}:${pass}` : ''
+      }
+    })
 
     Object.defineProperty(this, '__parsed__', {
       enumerable: false,
@@ -45,6 +94,8 @@ class ProxyURL extends URL {
       enumerable: false,
       writable: false,
       value: () => {
+        const encodedUsername = usernameGetter.call(this)
+        const encodedPassword = passwordGetter.call(this)
         if (!encodedUsername && !encodedPassword) {
           return `${this.protocol}//${this.host}`
         }
