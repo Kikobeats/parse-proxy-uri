@@ -11,6 +11,14 @@ const passwordGetter = Object.getOwnPropertyDescriptor(
   'password'
 ).get
 
+const hasControlChars = value => {
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i)
+    if (code <= 0x1f || code === 0x7f) return true
+  }
+  return false
+}
+
 class ParseProxyError extends Error {
   constructor (props) {
     super()
@@ -61,25 +69,21 @@ class ProxyURL extends URL {
       throw new TypeError('Invalid proxy')
     }
 
-    const decoded = getter => decodeURIComponent(getter.call(this))
-    decoded(usernameGetter) // reject malformed escapes at parse time
-    decoded(passwordGetter)
-
-    Object.defineProperty(this, 'username', {
-      enumerable: true,
-      get: () => decoded(usernameGetter)
-    })
-
-    Object.defineProperty(this, 'password', {
-      enumerable: true,
-      get: () => decoded(passwordGetter)
-    })
+    // Validate credentials at parse time. Keep username/password getters as the
+    // WHATWG percent-encoded forms so URL-consuming callers (e.g. got-scraping)
+    // can decodeURIComponent exactly once without corrupting credentials or
+    // throwing URIError on passwords that contain `%`.
+    const decodedUser = decodeURIComponent(usernameGetter.call(this))
+    const decodedPass = decodeURIComponent(passwordGetter.call(this))
+    if (hasControlChars(decodedUser) || hasControlChars(decodedPass)) {
+      throw new TypeError('Invalid proxy')
+    }
 
     Object.defineProperty(this, 'auth', {
       enumerable: true,
       get: () => {
-        const user = this.username
-        const pass = this.password
+        const user = decodeURIComponent(usernameGetter.call(this))
+        const pass = decodeURIComponent(passwordGetter.call(this))
         return user || pass ? `${user}:${pass}` : ''
       }
     })
@@ -110,7 +114,9 @@ class ProxyURL extends URL {
 
 module.exports = proxy => {
   if (!proxy) return undefined
-  if (typeof proxy === 'object' && proxy.__parsed__) return proxy
+  // Only trust instances we created — a plain `{ __parsed__: true }` must not
+  // skip validation (host/credential spoofing).
+  if (proxy instanceof ProxyURL) return proxy
 
   try {
     return new ProxyURL(proxy)

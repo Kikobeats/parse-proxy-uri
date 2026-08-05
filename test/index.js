@@ -87,8 +87,9 @@ test('decode HTML chars', t => {
   const str = 'socks5://foo=bar&hello=world:p@ssw=1+$$@foo:1337'
   const parsedProxy = parseProxy(str)
 
-  t.is(parsedProxy.username, 'foo=bar&hello=world')
-  t.is(parsedProxy.password, 'p@ssw=1+$$')
+  // username/password stay WHATWG-encoded; auth exposes the decoded form.
+  t.is(parsedProxy.username, 'foo%3Dbar&hello%3Dworld')
+  t.is(parsedProxy.password, 'p%40ssw%3D1+$$')
   t.is(parsedProxy.hostname, 'foo')
   t.is(parsedProxy.host, 'foo:1337')
   t.is(parsedProxy.protocol, 'socks5:')
@@ -108,16 +109,18 @@ test('toString percent-encodes reserved characters in credentials', t => {
     'http://user%3Aname:pass%40word%2Fpath@proxy.example:8080'
   )
 
-  t.is(parsedProxy.username, 'user:name')
-  t.is(parsedProxy.password, 'pass@word/path')
+  t.is(parsedProxy.username, 'user%3Aname')
+  t.is(parsedProxy.password, 'pass%40word%2Fpath')
+  t.is(parsedProxy.auth, 'user:name:pass@word/path')
   t.is(
     parsedProxy.toString(),
     'http://user%3Aname:pass%40word%2Fpath@proxy.example:8080'
   )
 
   const roundTrip = parseProxy(parsedProxy.toString())
-  t.is(roundTrip.username, 'user:name')
-  t.is(roundTrip.password, 'pass@word/path')
+  t.is(roundTrip.username, 'user%3Aname')
+  t.is(roundTrip.password, 'pass%40word%2Fpath')
+  t.is(roundTrip.auth, 'user:name:pass@word/path')
 })
 
 test('toString omits empty credentials', t => {
@@ -150,6 +153,30 @@ test('reject malformed percent-escapes in credentials', t => {
   ])
 })
 
+test('reject control characters in credentials', t => {
+  assertInvalidProxies(t, [
+    'http://user%0d%0aInjected:%20yes@proxy.example:8080',
+    'http://user:%0apass@proxy.example:8080',
+    'http://user%00:pass@proxy.example:8080'
+  ])
+})
+
+test('username/password match WHATWG encoding for URL consumers', t => {
+  // got-scraping and similar call decodeURIComponent(url.username). Returning
+  // already-decoded values double-decodes (`%253A` → `%3A` → `:`) or throws
+  // URIError on passwords like `100%pure`.
+  const parsedProxy = parseProxy(
+    'http://user%253Aname:100%25pure@proxy.example:8080'
+  )
+
+  t.is(parsedProxy.username, 'user%253Aname')
+  t.is(parsedProxy.password, '100%25pure')
+  t.is(parsedProxy.auth, 'user%3Aname:100%pure')
+
+  t.is(decodeURIComponent(parsedProxy.username), 'user%3Aname')
+  t.is(decodeURIComponent(parsedProxy.password), '100%pure')
+})
+
 test('credentials stay in sync when href or host is mutated', t => {
   const parsedProxy = parseProxy('http://alice:TopSecret@trusted.proxy:8443')
 
@@ -170,6 +197,29 @@ test('credentials stay in sync when href or host is mutated', t => {
   t.is(parsedProxy.password, '')
   t.is(parsedProxy.auth, '')
   t.is(parsedProxy.toString(), 'http://noproxy.example:8080')
+})
+
+test('plain objects with __parsed__ do not bypass validation', t => {
+  const spoofed = {
+    __parsed__: true,
+    hostname: 'evil.proxy',
+    auth: 'leaked:creds',
+    toString: () => 'not-a-proxy'
+  }
+
+  const error = t.throws(() => parseProxy(spoofed), { instanceOf: Error })
+  t.is(error.code, 'INVALID_PROXY')
+
+  // A lying toString() must not return the attacker object with spoofed fields.
+  const lying = {
+    __parsed__: true,
+    hostname: 'looks-safe.example',
+    toString: () => 'http://evil.proxy:8080'
+  }
+  const parsed = parseProxy(lying)
+  t.true(parsed instanceof ProxyURL)
+  t.not(parsed, lying)
+  t.is(parsed.hostname, 'evil.proxy')
 })
 
 test('reject schemeless host:port that WHATWG treats as a custom scheme', t => {
