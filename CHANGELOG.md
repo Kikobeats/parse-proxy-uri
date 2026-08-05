@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### 2.0.11 (2026-08-05)
+
+
+### Bug Fixes
+
+* keep ProxyURL credentials WHATWG-compatible ([#26](https://github.com/Kikobeats/parse-proxy-uri/issues/26)) ([9acf467](https://github.com/Kikobeats/parse-proxy-uri/commit/9acf46735a1283f76a44d7f6c2f4a83d7d16769b))
+
 ### 2.0.10 (2026-08-04)
 
 
