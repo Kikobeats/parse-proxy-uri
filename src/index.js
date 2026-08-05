@@ -2,14 +2,20 @@
 
 const { isIP } = require('net')
 
-const usernameGetter = Object.getOwnPropertyDescriptor(
-  URL.prototype,
-  'username'
-).get
-const passwordGetter = Object.getOwnPropertyDescriptor(
-  URL.prototype,
-  'password'
-).get
+// `username`/`password` stay in their WHATWG percent-encoded form so callers
+// consuming this as a URL (e.g. got-scraping) decode exactly once.
+const decodedCredentials = url => ({
+  user: decodeURIComponent(url.username),
+  pass: decodeURIComponent(url.password)
+})
+
+const hasControlChars = value => {
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i)
+    if (code <= 0x1f || code === 0x7f) return true
+  }
+  return false
+}
 
 class ParseProxyError extends Error {
   constructor (props) {
@@ -61,47 +67,29 @@ class ProxyURL extends URL {
       throw new TypeError('Invalid proxy')
     }
 
-    const decoded = getter => decodeURIComponent(getter.call(this))
-    decoded(usernameGetter) // reject malformed escapes at parse time
-    decoded(passwordGetter)
-
-    Object.defineProperty(this, 'username', {
-      enumerable: true,
-      get: () => decoded(usernameGetter)
-    })
-
-    Object.defineProperty(this, 'password', {
-      enumerable: true,
-      get: () => decoded(passwordGetter)
-    })
+    const { user, pass } = decodedCredentials(this)
+    if (hasControlChars(user) || hasControlChars(pass)) {
+      throw new TypeError('Invalid proxy')
+    }
 
     Object.defineProperty(this, 'auth', {
       enumerable: true,
       get: () => {
-        const user = this.username
-        const pass = this.password
+        const { user, pass } = decodedCredentials(this)
         return user || pass ? `${user}:${pass}` : ''
       }
-    })
-
-    Object.defineProperty(this, '__parsed__', {
-      enumerable: false,
-      writable: false,
-      value: true
     })
 
     Object.defineProperty(this, 'toString', {
       enumerable: false,
       writable: false,
       value: () => {
-        const encodedUsername = usernameGetter.call(this)
-        const encodedPassword = passwordGetter.call(this)
-        if (!encodedUsername && !encodedPassword) {
+        if (!this.username && !this.password) {
           return `${this.protocol}//${this.host}`
         }
-        const userinfo = encodedPassword
-          ? `${encodedUsername}:${encodedPassword}`
-          : encodedUsername
+        const userinfo = this.password
+          ? `${this.username}:${this.password}`
+          : this.username
         return `${this.protocol}//${userinfo}@${this.host}`
       }
     })
@@ -110,7 +98,7 @@ class ProxyURL extends URL {
 
 module.exports = proxy => {
   if (!proxy) return undefined
-  if (typeof proxy === 'object' && proxy.__parsed__) return proxy
+  if (proxy instanceof ProxyURL) return proxy
 
   try {
     return new ProxyURL(proxy)
