@@ -64,7 +64,6 @@ const encodePercents = value => String(value).replace(/%/g, '%25')
 
 // Host token before WHATWG IPv4 normalization (e.g. 2130706433 → 127.0.0.1).
 const hostToken = authority => {
-  authority = String(authority)
   const pathIndex = authority.search(/[/?#]/)
   const atIndex = authority.indexOf('@')
 
