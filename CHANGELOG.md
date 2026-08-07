@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### 2.0.12 (2026-08-07)
+
+
+### Bug Fixes
+
+* keep ProxyURL credential mutations decode-safe ([#27](https://github.com/Kikobeats/parse-proxy-uri/issues/27)) ([52391c4](https://github.com/Kikobeats/parse-proxy-uri/commit/52391c47b1ae3ac38bcecd3f01ec9a6063d3feca)), closes [#25](https://github.com/Kikobeats/parse-proxy-uri/issues/25)
+
 ### 2.0.11 (2026-08-05)
 
 
