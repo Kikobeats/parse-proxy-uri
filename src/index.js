@@ -2,36 +2,32 @@
 
 const { isIP } = require('net')
 
-const usernameGetter = Object.getOwnPropertyDescriptor(
-  URL.prototype,
-  'username'
-).get
-const usernameSetter = Object.getOwnPropertyDescriptor(
-  URL.prototype,
-  'username'
-).set
-const passwordGetter = Object.getOwnPropertyDescriptor(
-  URL.prototype,
-  'password'
-).get
-const passwordSetter = Object.getOwnPropertyDescriptor(
-  URL.prototype,
-  'password'
-).set
-const hrefGetter = Object.getOwnPropertyDescriptor(URL.prototype, 'href').get
-const hrefSetter = Object.getOwnPropertyDescriptor(URL.prototype, 'href').set
+const MUTABLE_KEYS = [
+  'username',
+  'password',
+  'href',
+  'host',
+  'hostname',
+  'pathname',
+  'search',
+  'hash'
+]
 
-// Node's userinfo setters leave bare `%` sequences intact, which later breaks
-// decodeURIComponent (auth, got-scraping). Encode only invalid `%` so valid
-// escapes like `%40` keep their WHATWG setter meaning.
-const encodeBarePercents = value =>
-  String(value).replace(/%(?![0-9A-Fa-f]{2})/g, '%25')
+const native = {}
+for (const key of MUTABLE_KEYS) {
+  native[key] = Object.getOwnPropertyDescriptor(URL.prototype, key)
+}
+
+// WHATWG userinfo setters percent-encode everything except `%` itself, so a raw
+// `%` would later read back as the start of an escape. Setters take raw values;
+// `auth` hands them back verbatim.
+const encodePercents = value => String(value).replace(/%/g, '%25')
 
 // `username`/`password` stay in their WHATWG percent-encoded form so callers
 // consuming this as a URL (e.g. got-scraping) decode exactly once.
 const decodedCredentials = url => ({
-  user: decodeURIComponent(usernameGetter.call(url)),
-  pass: decodeURIComponent(passwordGetter.call(url))
+  user: decodeURIComponent(url.username),
+  pass: decodeURIComponent(url.password)
 })
 
 const hasControlChars = value => {
@@ -40,6 +36,59 @@ const hasControlChars = value => {
     if (code <= 0x1f || code === 0x7f) return true
   }
   return false
+}
+
+class ParseProxyError extends TypeError {
+  constructor (props) {
+    super()
+    this.name = 'ParseProxyError'
+    Object.assign(this, props)
+    this.description = this.message
+    this.message = `${this.code}, ${this.description}`
+  }
+}
+
+const invalidProxy = value =>
+  new ParseProxyError({
+    message: `The value \`${value}\` can't be parsed as proxy`,
+    code: 'INVALID_PROXY'
+  })
+
+// `URLSearchParams` writes straight through to `search`, out of reach of the
+// setters below. A proxy URI never carries a query, so this stays empty and
+// detached: reads are accurate, writes are refused.
+const sealedSearchParams = () => {
+  const params = new URLSearchParams()
+  for (const key of ['append', 'delete', 'set', 'sort']) {
+    params[key] = (...args) => {
+      throw invalidProxy(args[0])
+    }
+  }
+  return params
+}
+
+const assertProxyShape = url => {
+  if (
+    !url.hostname ||
+    (url.pathname !== '' && url.pathname !== '/') ||
+    url.search !== '' ||
+    url.hash !== ''
+  ) {
+    throw new TypeError('Invalid proxy')
+  }
+}
+
+// WHATWG rewrites integer/octal/hex IPv4 hosts (e.g. 2130706433 → 127.0.0.1),
+// which would let an obfuscated host reach a different peer than it reads as.
+const assertCanonicalHost = (url, rawHost) => {
+  if (isIP(url.hostname) !== 4) return
+  let decoded
+  try {
+    decoded = decodeURIComponent(rawHost)
+  } catch (_) {
+    throw new TypeError('Invalid proxy')
+  }
+  if (decoded !== url.hostname) throw new TypeError('Invalid proxy')
 }
 
 const assertValidCredentials = url => {
@@ -55,17 +104,7 @@ const assertValidCredentials = url => {
   }
 }
 
-class ParseProxyError extends Error {
-  constructor (props) {
-    super()
-    this.name = 'ParseProxyError'
-    Object.assign(this, props)
-    this.description = this.message
-    this.message = `${this.code}, ${this.description}`
-  }
-}
-
-// Host token before WHATWG IPv4 normalization (e.g. 2130706433 → 127.0.0.1).
+// Host token before WHATWG IPv4 normalization.
 const rawHostname = proxy => {
   let authority = proxy.slice(proxy.indexOf('://') + 3)
   const pathIndex = authority.search(/[/?#]/)
@@ -89,67 +128,65 @@ class ProxyURL extends URL {
 
     super(proxy)
 
-    if (
-      !this.hostname ||
-      (this.pathname !== '' && this.pathname !== '/') ||
-      this.search !== '' ||
-      this.hash !== ''
-    ) {
-      throw new TypeError('Invalid proxy')
-    }
-
-    if (
-      isIP(this.hostname) === 4 &&
-      decodeURIComponent(rawHostname(proxy)) !== this.hostname
-    ) {
-      throw new TypeError('Invalid proxy')
-    }
-
+    assertProxyShape(this)
+    assertCanonicalHost(this, rawHostname(proxy))
     assertValidCredentials(this)
 
-    Object.defineProperty(this, 'username', {
-      enumerable: true,
-      get: () => usernameGetter.call(this),
-      set: value => {
-        const previous = usernameGetter.call(this)
-        usernameSetter.call(this, encodeBarePercents(value))
-        try {
-          assertValidCredentials(this)
-        } catch (error) {
-          usernameSetter.call(this, previous)
-          throw error
+    const guard = (key, mutate) =>
+      Object.defineProperty(this, key, {
+        enumerable: false,
+        configurable: true,
+        get: () => native[key].get.call(this),
+        set: value => {
+          const previous = native.href.get.call(this)
+          try {
+            mutate(value)
+          } catch (_) {
+            native.href.set.call(this, previous)
+            throw invalidProxy(value)
+          }
         }
-      }
+      })
+
+    guard('username', value => {
+      native.username.set.call(this, encodePercents(value))
+      assertValidCredentials(this)
     })
 
-    Object.defineProperty(this, 'password', {
-      enumerable: true,
-      get: () => passwordGetter.call(this),
-      set: value => {
-        const previous = passwordGetter.call(this)
-        passwordSetter.call(this, encodeBarePercents(value))
-        try {
-          assertValidCredentials(this)
-        } catch (error) {
-          passwordSetter.call(this, previous)
-          throw error
-        }
-      }
+    guard('password', value => {
+      native.password.set.call(this, encodePercents(value))
+      assertValidCredentials(this)
     })
 
-    Object.defineProperty(this, 'href', {
-      enumerable: true,
-      get: () => hrefGetter.call(this),
-      set: value => {
-        const previous = hrefGetter.call(this)
-        hrefSetter.call(this, value)
-        try {
-          assertValidCredentials(this)
-        } catch (error) {
-          hrefSetter.call(this, previous)
-          throw error
-        }
-      }
+    // A whole proxy URI, held to the same rules as the constructor.
+    guard('href', value => {
+      const candidate = new ProxyURL(value)
+      native.href.set.call(this, native.href.get.call(candidate))
+    })
+
+    guard('host', value => {
+      native.host.set.call(this, value)
+      assertProxyShape(this)
+      assertCanonicalHost(this, String(value).split(':')[0])
+    })
+
+    guard('hostname', value => {
+      native.hostname.set.call(this, value)
+      assertProxyShape(this)
+      assertCanonicalHost(this, String(value))
+    })
+
+    for (const key of ['pathname', 'search', 'hash']) {
+      guard(key, value => {
+        native[key].set.call(this, value)
+        assertProxyShape(this)
+      })
+    }
+
+    Object.defineProperty(this, 'searchParams', {
+      enumerable: false,
+      configurable: true,
+      get: () => sealedSearchParams()
     })
 
     Object.defineProperty(this, 'auth', {
@@ -183,10 +220,7 @@ module.exports = proxy => {
   try {
     return new ProxyURL(proxy)
   } catch (_) {
-    throw new ParseProxyError({
-      message: `The value \`${proxy}\` can't be parsed as proxy`,
-      code: 'INVALID_PROXY'
-    })
+    throw invalidProxy(proxy)
   }
 }
 

@@ -26,6 +26,24 @@ const assertInvalidProxies = (t, inputs) => {
   }
 }
 
+const TRUSTED = 'http://alice:TopSecret@trusted.proxy:8443'
+
+const assertRejectedMutations = (t, key, values) => {
+  for (const value of values) {
+    const parsedProxy = parseProxy(TRUSTED)
+    const error = t.throws(
+      () => {
+        parsedProxy[key] = value
+      },
+      { instanceOf: TypeError }
+    )
+    t.is(error.code, 'INVALID_PROXY')
+    t.is(parsedProxy.toString(), TRUSTED)
+    t.is(parsedProxy.href, `${TRUSTED}/`)
+    t.is(parsedProxy.auth, 'alice:TopSecret')
+  }
+}
+
 test('invalid', t => {
   t.is(parseProxy(), undefined)
   t.is(parseProxy(null), undefined)
@@ -210,15 +228,144 @@ test('credential setters encode bare percent signs for round-trip safety', t => 
   t.is(decodeURIComponent(roundTrip.password), '100%pure')
 })
 
-test('credential setters preserve valid percent-escapes', t => {
+test('credential setters take raw values, not pre-encoded ones', t => {
   const parsedProxy = parseProxy('http://proxy.example:8080')
 
   parsedProxy.username = 'user%40name'
   parsedProxy.password = 'p%40ss%2Fword'
 
+  t.is(parsedProxy.username, 'user%2540name')
+  t.is(parsedProxy.password, 'p%2540ss%252Fword')
+  t.is(parsedProxy.auth, 'user%40name:p%40ss%2Fword')
+
+  const roundTrip = parseProxy(parsedProxy.toString())
+  t.is(roundTrip.auth, 'user%40name:p%40ss%2Fword')
+})
+
+test('credential setters encode reserved characters', t => {
+  const parsedProxy = parseProxy('http://proxy.example:8080')
+
+  parsedProxy.username = 'user@name'
+  parsedProxy.password = 'p@ss/word'
+
   t.is(parsedProxy.username, 'user%40name')
   t.is(parsedProxy.password, 'p%40ss%2Fword')
   t.is(parsedProxy.auth, 'user@name:p@ss/word')
+  t.is(
+    parsedProxy.toString(),
+    'http://user%40name:p%40ss%2Fword@proxy.example:8080'
+  )
+})
+
+test('href mutation enforces every constructor invariant', t => {
+  assertRejectedMutations(t, 'href', [
+    'http://evil.example:1/path',
+    'http://evil.example:1?q=1',
+    'http://evil.example:1#frag',
+    'data:text/plain,hello',
+    'http://2130706433:8080',
+    'https://0x7f000001:8080',
+    'proxy.example:8080',
+    'http://'
+  ])
+})
+
+test('host mutation rejects non-canonical IPv4 rewrites', t => {
+  assertRejectedMutations(t, 'hostname', [
+    '2130706433',
+    '0x7f000001',
+    '127.1',
+    '00127.0.0.1'
+  ])
+  assertRejectedMutations(t, 'host', [
+    '2130706433:99',
+    '0300.0250.0001.0001:99'
+  ])
+})
+
+test('host mutation rejects malformed percent-escapes', t => {
+  const parsedProxy = parseProxy('http://127.0.0.1:8080')
+  const error = t.throws(
+    () => {
+      parsedProxy.hostname = '127.0.0.%zz'
+    },
+    { instanceOf: TypeError }
+  )
+
+  t.is(error.code, 'INVALID_PROXY')
+  t.is(parsedProxy.toString(), 'http://127.0.0.1:8080')
+})
+
+test('host mutation accepts canonical hosts', t => {
+  const parsedProxy = parseProxy(TRUSTED)
+
+  parsedProxy.hostname = 'other.proxy'
+  t.is(parsedProxy.toString(), 'http://alice:TopSecret@other.proxy:8443')
+
+  parsedProxy.host = '127.0.0.1:9443'
+  t.is(parsedProxy.toString(), 'http://alice:TopSecret@127.0.0.1:9443')
+  t.is(parsedProxy.auth, 'alice:TopSecret')
+})
+
+test('path/query/hash mutation is rejected', t => {
+  assertRejectedMutations(t, 'pathname', ['/extra', 'extra'])
+  assertRejectedMutations(t, 'search', ['?x=1', 'x=1'])
+  assertRejectedMutations(t, 'hash', ['#frag', 'frag'])
+})
+
+test('empty path/query/hash mutation stays a no-op', t => {
+  const parsedProxy = parseProxy(TRUSTED)
+
+  parsedProxy.pathname = '/'
+  parsedProxy.search = ''
+  parsedProxy.hash = ''
+
+  t.is(parsedProxy.toString(), TRUSTED)
+})
+
+test('searchParams cannot smuggle a query past the setters', t => {
+  const parsedProxy = parseProxy(TRUSTED)
+
+  t.is(parsedProxy.searchParams.toString(), '')
+
+  for (const mutate of [
+    params => params.set('x', '1'),
+    params => params.append('x', '1'),
+    params => params.delete('x'),
+    params => params.sort()
+  ]) {
+    const error = t.throws(() => mutate(parsedProxy.searchParams), {
+      instanceOf: TypeError
+    })
+    t.is(error.code, 'INVALID_PROXY')
+  }
+
+  t.is(parsedProxy.search, '')
+  t.is(parsedProxy.href, `${TRUSTED}/`)
+  t.is(parsedProxy.toString(), TRUSTED)
+})
+
+test('mutation failures throw ParseProxyError', t => {
+  const parsedProxy = parseProxy(TRUSTED)
+  const error = t.throws(() => {
+    parsedProxy.pathname = '/extra'
+  })
+
+  t.is(error.name, 'ParseProxyError')
+  t.is(error.code, 'INVALID_PROXY')
+  t.is(
+    error.message,
+    "INVALID_PROXY, The value `/extra` can't be parsed as proxy"
+  )
+  t.true(error instanceof TypeError)
+})
+
+test('credentials are not exposed by enumeration', t => {
+  const parsedProxy = parseProxy(TRUSTED)
+
+  t.deepEqual(Object.keys(parsedProxy), ['auth'])
+  t.deepEqual({ ...parsedProxy }, { auth: 'alice:TopSecret' })
+  t.true(Object.getOwnPropertyDescriptor(parsedProxy, 'username').configurable)
 })
 
 test('href mutation rejects undecodable or control-char credentials', t => {
