@@ -523,6 +523,14 @@ test('accept canonical dotted-decimal IPv4 hosts', t => {
   t.is(parsedProxy.toString(), 'http://127.0.0.1:8080')
 })
 
+test('read the raw IPv4 host past credentials and a trailing slash', t => {
+  const parsedProxy = parseProxy('http://user:pass@127.0.0.1:8080/')
+  t.is(parsedProxy.hostname, '127.0.0.1')
+  t.is(parsedProxy.toString(), 'http://user:pass@127.0.0.1:8080')
+
+  assertInvalidProxies(t, ['http://user:pass@2130706433:8080/'])
+})
+
 test('accept percent-encoded dots in canonical IPv4 hosts', t => {
   const parsedProxy = parseProxy('http://127%2E0%2E0%2E1:8080')
   t.is(parsedProxy.hostname, '127.0.0.1')
