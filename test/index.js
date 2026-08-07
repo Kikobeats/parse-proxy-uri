@@ -365,7 +365,11 @@ test('credentials are not exposed by enumeration', t => {
 
   t.deepEqual(Object.keys(parsedProxy), ['auth'])
   t.deepEqual({ ...parsedProxy }, { auth: 'alice:TopSecret' })
-  t.true(Object.getOwnPropertyDescriptor(parsedProxy, 'username').configurable)
+
+  for (const key of ['username', 'password', 'href']) {
+    t.is(Object.getOwnPropertyDescriptor(parsedProxy, key), undefined)
+    t.false(Object.getOwnPropertyDescriptor(ProxyURL.prototype, key).enumerable)
+  }
 })
 
 test('href mutation rejects undecodable or control-char credentials', t => {
