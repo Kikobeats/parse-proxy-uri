@@ -195,6 +195,76 @@ test('credentials stay in sync when href or host is mutated', t => {
   t.is(parsedProxy.toString(), 'http://noproxy.example:8080')
 })
 
+test('credential setters encode bare percent signs for round-trip safety', t => {
+  const parsedProxy = parseProxy('http://proxy.example:8080')
+
+  parsedProxy.username = 'user'
+  parsedProxy.password = '100%pure'
+
+  t.is(parsedProxy.password, '100%25pure')
+  t.is(parsedProxy.auth, 'user:100%pure')
+  t.is(parsedProxy.toString(), 'http://user:100%25pure@proxy.example:8080')
+
+  const roundTrip = parseProxy(parsedProxy.toString())
+  t.is(roundTrip.auth, 'user:100%pure')
+  t.is(decodeURIComponent(roundTrip.password), '100%pure')
+})
+
+test('credential setters preserve valid percent-escapes', t => {
+  const parsedProxy = parseProxy('http://proxy.example:8080')
+
+  parsedProxy.username = 'user%40name'
+  parsedProxy.password = 'p%40ss%2Fword'
+
+  t.is(parsedProxy.username, 'user%40name')
+  t.is(parsedProxy.password, 'p%40ss%2Fword')
+  t.is(parsedProxy.auth, 'user@name:p@ss/word')
+})
+
+test('href mutation rejects undecodable or control-char credentials', t => {
+  const parsedProxy = parseProxy('http://alice:TopSecret@trusted.proxy:8443')
+
+  t.throws(
+    () => {
+      parsedProxy.href = 'http://bob:100%pure@other.proxy:8443'
+    },
+    { instanceOf: TypeError }
+  )
+  t.is(parsedProxy.toString(), 'http://alice:TopSecret@trusted.proxy:8443')
+  t.is(parsedProxy.auth, 'alice:TopSecret')
+
+  t.throws(
+    () => {
+      parsedProxy.href = 'http://user%0d%0aInjected:x@evil.proxy:8080'
+    },
+    { instanceOf: TypeError }
+  )
+  t.is(parsedProxy.hostname, 'trusted.proxy')
+  t.is(parsedProxy.auth, 'alice:TopSecret')
+})
+
+test('credential setters reject control characters', t => {
+  const parsedProxy = parseProxy('http://alice:TopSecret@trusted.proxy:8443')
+
+  t.throws(
+    () => {
+      parsedProxy.password = 'x\r\ny'
+    },
+    { instanceOf: TypeError }
+  )
+  t.is(parsedProxy.password, 'TopSecret')
+  t.is(parsedProxy.auth, 'alice:TopSecret')
+
+  t.throws(
+    () => {
+      parsedProxy.username = 'al\nice'
+    },
+    { instanceOf: TypeError }
+  )
+  t.is(parsedProxy.username, 'alice')
+  t.is(parsedProxy.auth, 'alice:TopSecret')
+})
+
 test('plain objects claiming to be parsed do not bypass validation', t => {
   assertInvalidProxies(t, [
     {

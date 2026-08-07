@@ -2,11 +2,36 @@
 
 const { isIP } = require('net')
 
+const usernameGetter = Object.getOwnPropertyDescriptor(
+  URL.prototype,
+  'username'
+).get
+const usernameSetter = Object.getOwnPropertyDescriptor(
+  URL.prototype,
+  'username'
+).set
+const passwordGetter = Object.getOwnPropertyDescriptor(
+  URL.prototype,
+  'password'
+).get
+const passwordSetter = Object.getOwnPropertyDescriptor(
+  URL.prototype,
+  'password'
+).set
+const hrefGetter = Object.getOwnPropertyDescriptor(URL.prototype, 'href').get
+const hrefSetter = Object.getOwnPropertyDescriptor(URL.prototype, 'href').set
+
+// Node's userinfo setters leave bare `%` sequences intact, which later breaks
+// decodeURIComponent (auth, got-scraping). Encode only invalid `%` so valid
+// escapes like `%40` keep their WHATWG setter meaning.
+const encodeBarePercents = value =>
+  String(value).replace(/%(?![0-9A-Fa-f]{2})/g, '%25')
+
 // `username`/`password` stay in their WHATWG percent-encoded form so callers
 // consuming this as a URL (e.g. got-scraping) decode exactly once.
 const decodedCredentials = url => ({
-  user: decodeURIComponent(url.username),
-  pass: decodeURIComponent(url.password)
+  user: decodeURIComponent(usernameGetter.call(url)),
+  pass: decodeURIComponent(passwordGetter.call(url))
 })
 
 const hasControlChars = value => {
@@ -15,6 +40,19 @@ const hasControlChars = value => {
     if (code <= 0x1f || code === 0x7f) return true
   }
   return false
+}
+
+const assertValidCredentials = url => {
+  let user
+  let pass
+  try {
+    ;({ user, pass } = decodedCredentials(url))
+  } catch (_) {
+    throw new TypeError('Invalid proxy')
+  }
+  if (hasControlChars(user) || hasControlChars(pass)) {
+    throw new TypeError('Invalid proxy')
+  }
 }
 
 class ParseProxyError extends Error {
@@ -67,10 +105,52 @@ class ProxyURL extends URL {
       throw new TypeError('Invalid proxy')
     }
 
-    const { user, pass } = decodedCredentials(this)
-    if (hasControlChars(user) || hasControlChars(pass)) {
-      throw new TypeError('Invalid proxy')
-    }
+    assertValidCredentials(this)
+
+    Object.defineProperty(this, 'username', {
+      enumerable: true,
+      get: () => usernameGetter.call(this),
+      set: value => {
+        const previous = usernameGetter.call(this)
+        usernameSetter.call(this, encodeBarePercents(value))
+        try {
+          assertValidCredentials(this)
+        } catch (error) {
+          usernameSetter.call(this, previous)
+          throw error
+        }
+      }
+    })
+
+    Object.defineProperty(this, 'password', {
+      enumerable: true,
+      get: () => passwordGetter.call(this),
+      set: value => {
+        const previous = passwordGetter.call(this)
+        passwordSetter.call(this, encodeBarePercents(value))
+        try {
+          assertValidCredentials(this)
+        } catch (error) {
+          passwordSetter.call(this, previous)
+          throw error
+        }
+      }
+    })
+
+    Object.defineProperty(this, 'href', {
+      enumerable: true,
+      get: () => hrefGetter.call(this),
+      set: value => {
+        const previous = hrefGetter.call(this)
+        hrefSetter.call(this, value)
+        try {
+          assertValidCredentials(this)
+        } catch (error) {
+          hrefSetter.call(this, previous)
+          throw error
+        }
+      }
+    })
 
     Object.defineProperty(this, 'auth', {
       enumerable: true,
