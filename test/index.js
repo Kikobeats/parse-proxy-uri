@@ -323,6 +323,16 @@ test('empty path/query/hash mutation stays a no-op', t => {
   t.is(parsedProxy.toString(), TRUSTED)
 })
 
+test('ProxyURL rejects directly with the same error contract', t => {
+  for (const input of ['proxy.example:8080', 'http://evil.proxy:1/path']) {
+    const error = t.throws(() => new ProxyURL(input), {
+      instanceOf: TypeError
+    })
+    t.is(error.name, 'ParseProxyError')
+    t.is(error.code, 'INVALID_PROXY')
+  }
+})
+
 test('every URL setter is guarded', t => {
   const urlSetters = Object.getOwnPropertyNames(URL.prototype).filter(
     key => Object.getOwnPropertyDescriptor(URL.prototype, key).set

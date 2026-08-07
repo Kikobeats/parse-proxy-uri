@@ -13,20 +13,14 @@ for (const key of Object.getOwnPropertyNames(URL.prototype)) {
 const HREF = URL_ACCESSOR.href
 
 class ParseProxyError extends TypeError {
-  constructor (props) {
+  constructor (value) {
     super()
     this.name = 'ParseProxyError'
-    Object.assign(this, props)
-    this.description = this.message
+    this.code = 'INVALID_PROXY'
+    this.description = `The value \`${value}\` can't be parsed as proxy`
     this.message = `${this.code}, ${this.description}`
   }
 }
-
-const invalidProxy = value =>
-  new ParseProxyError({
-    message: `The value \`${value}\` can't be parsed as proxy`,
-    code: 'INVALID_PROXY'
-  })
 
 // `URLSearchParams` writes straight through to `search`, out of reach of the
 // accessors below. A proxy URI never carries a query, so this one is empty and
@@ -35,7 +29,7 @@ const SEALED_SEARCH_PARAMS = new URLSearchParams()
 for (const key of ['append', 'delete', 'set', 'sort']) {
   Object.defineProperty(SEALED_SEARCH_PARAMS, key, {
     value: value => {
-      throw invalidProxy(value)
+      throw new ParseProxyError(value)
     }
   })
 }
@@ -53,23 +47,24 @@ const decodeOrThrow = value => {
   try {
     return decodeURIComponent(value)
   } catch (_) {
-    throw new TypeError('Invalid proxy')
+    throw new ParseProxyError(value)
   }
 }
 
+// `isIP` matches IPv4 only as dotted-quad, which always ends in a digit — worth
+// ruling out first, since a proxy host is usually a name.
+const isCanonicalIPv4 = hostname => {
+  const last = hostname.charCodeAt(hostname.length - 1)
+  return last >= 48 && last <= 57 && isIP(hostname) === 4
+}
+
 // WHATWG userinfo setters percent-encode everything except `%` itself, so a raw
-// `%` would later read back as the start of an escape. Setters take raw values;
-// `auth` hands them back verbatim.
+// `%` would later read back as the start of an escape.
 const encodePercents = value => String(value).replace(/%/g, '%25')
 
 // Host token before WHATWG IPv4 normalization (e.g. 2130706433 → 127.0.0.1).
-// Also where `://` is required — WHATWG turns `host:port` / `http:8080` into
-// wrong hosts, and without it there is no authority to read.
-const rawHostname = proxy => {
-  proxy = String(proxy)
-  if (!proxy.includes('://')) throw new TypeError('Invalid proxy')
-
-  let authority = proxy.slice(proxy.indexOf('://') + 3)
+const hostToken = authority => {
+  authority = String(authority)
   const pathIndex = authority.search(/[/?#]/)
   const atIndex = authority.indexOf('@')
 
@@ -81,14 +76,21 @@ const rawHostname = proxy => {
   return hostEnd === -1 ? authority : authority.slice(0, hostEnd)
 }
 
-// How each assignment differs from `set it, then re-check the whole proxy`.
-// Only one that can name a new host needs the pre-normalization token; for the
-// rest the hostname in hand is already canonical.
+// WHATWG turns `host:port` / `http:8080` into wrong hosts, so `://` is
+// required — and without it there is no authority to read.
+const rawHostname = proxy => {
+  proxy = String(proxy)
+  if (!proxy.includes('://')) throw new ParseProxyError(proxy)
+  return hostToken(proxy.slice(proxy.indexOf('://') + 3))
+}
+
+// Only an assignment that can name a new host carries `rawHost`; for the rest
+// the hostname in hand is already canonical.
 const MUTATION = {
   username: { encode: true },
   password: { encode: true },
   href: { rawHost: rawHostname },
-  host: { rawHost: value => rawHostname(`x://${value}`) },
+  host: { rawHost: hostToken },
   hostname: { rawHost: String }
 }
 
@@ -104,9 +106,9 @@ const assertValidProxy = (url, rawHost = url.hostname) => {
     url.hash !== '' ||
     hasControlChars(user) ||
     hasControlChars(pass) ||
-    (isIP(hostname) === 4 && decodeOrThrow(rawHost) !== hostname)
+    (isCanonicalIPv4(hostname) && decodeOrThrow(rawHost) !== hostname)
   ) {
-    throw new TypeError('Invalid proxy')
+    throw new ParseProxyError(url.href)
   }
 }
 
@@ -123,7 +125,6 @@ const AUTH = {
 
 class ProxyURL extends URL {
   constructor (proxy) {
-    proxy = String(proxy)
     const rawHost = rawHostname(proxy)
     super(proxy)
     assertValidProxy(this, rawHost)
@@ -151,18 +152,16 @@ for (const key of Object.keys(URL_ACCESSOR)) {
 
   Object.defineProperty(ProxyURL.prototype, key, {
     configurable: true,
-    get () {
-      return get.call(this)
-    },
+    get,
     set (value) {
       const previous = HREF.get.call(this)
       try {
-        const rawHost = rawHostOf && rawHostOf(value)
+        const rawHost = rawHostOf?.(value)
         set.call(this, encode ? encodePercents(value) : value)
         assertValidProxy(this, rawHost)
       } catch (_) {
         HREF.set.call(this, previous)
-        throw invalidProxy(value)
+        throw new ParseProxyError(value)
       }
     }
   })
@@ -175,7 +174,7 @@ module.exports = proxy => {
   try {
     return new ProxyURL(proxy)
   } catch (_) {
-    throw invalidProxy(proxy)
+    throw new ParseProxyError(proxy)
   }
 }
 
