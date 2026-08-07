@@ -192,7 +192,7 @@ test('username/password match WHATWG encoding for URL consumers', t => {
 })
 
 test('credentials stay in sync when href or host is mutated', t => {
-  const parsedProxy = parseProxy('http://alice:TopSecret@trusted.proxy:8443')
+  const parsedProxy = parseProxy(TRUSTED)
 
   parsedProxy.hostname = 'other.proxy'
   t.is(parsedProxy.username, 'alice')
@@ -323,10 +323,41 @@ test('empty path/query/hash mutation stays a no-op', t => {
   t.is(parsedProxy.toString(), TRUSTED)
 })
 
+test('every URL setter is guarded', t => {
+  const urlSetters = Object.getOwnPropertyNames(URL.prototype).filter(
+    key => Object.getOwnPropertyDescriptor(URL.prototype, key).set
+  )
+
+  t.true(urlSetters.includes('protocol'))
+  t.true(urlSetters.includes('port'))
+
+  for (const key of urlSetters) {
+    const guarded = Object.getOwnPropertyDescriptor(ProxyURL.prototype, key)
+    t.truthy(guarded, key)
+    t.not(guarded.set, Object.getOwnPropertyDescriptor(URL.prototype, key).set)
+  }
+})
+
+test('protocol and port mutation stay within proxy shape', t => {
+  const parsedProxy = parseProxy(TRUSTED)
+
+  parsedProxy.protocol = 'ftp:'
+  t.is(parsedProxy.toString(), 'ftp://alice:TopSecret@trusted.proxy:8443')
+
+  parsedProxy.port = '9999'
+  t.is(parsedProxy.toString(), 'ftp://alice:TopSecret@trusted.proxy:9999')
+
+  parsedProxy.port = ''
+  t.is(parsedProxy.toString(), 'ftp://alice:TopSecret@trusted.proxy')
+  t.is(parsedProxy.auth, 'alice:TopSecret')
+})
+
 test('searchParams cannot smuggle a query past the setters', t => {
   const parsedProxy = parseProxy(TRUSTED)
 
   t.is(parsedProxy.searchParams.toString(), '')
+  t.is(parsedProxy.searchParams, parsedProxy.searchParams)
+  t.deepEqual(Object.keys(parsedProxy.searchParams), [])
 
   for (const mutate of [
     params => params.set('x', '1'),
@@ -373,7 +404,7 @@ test('credentials are not exposed by enumeration', t => {
 })
 
 test('href mutation rejects undecodable or control-char credentials', t => {
-  const parsedProxy = parseProxy('http://alice:TopSecret@trusted.proxy:8443')
+  const parsedProxy = parseProxy(TRUSTED)
 
   t.throws(
     () => {
@@ -381,7 +412,7 @@ test('href mutation rejects undecodable or control-char credentials', t => {
     },
     { instanceOf: TypeError }
   )
-  t.is(parsedProxy.toString(), 'http://alice:TopSecret@trusted.proxy:8443')
+  t.is(parsedProxy.toString(), TRUSTED)
   t.is(parsedProxy.auth, 'alice:TopSecret')
 
   t.throws(
@@ -395,7 +426,7 @@ test('href mutation rejects undecodable or control-char credentials', t => {
 })
 
 test('credential setters reject control characters', t => {
-  const parsedProxy = parseProxy('http://alice:TopSecret@trusted.proxy:8443')
+  const parsedProxy = parseProxy(TRUSTED)
 
   t.throws(
     () => {

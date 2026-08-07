@@ -2,23 +2,15 @@
 
 const { isIP } = require('net')
 
-const MUTABLE_KEYS = [
-  'username',
-  'password',
-  'href',
-  'host',
-  'hostname',
-  'pathname',
-  'search',
-  'hash'
-]
+// Whatever WHATWG lets you assign is what has to be guarded, so the set is read
+// off the platform rather than hand-kept.
+const URL_ACCESSOR = {}
+for (const key of Object.getOwnPropertyNames(URL.prototype)) {
+  const accessor = Object.getOwnPropertyDescriptor(URL.prototype, key)
+  if (accessor.set) URL_ACCESSOR[key] = accessor
+}
 
-const ENCODED_KEYS = new Set(['username', 'password'])
-
-const nativeGet = (url, key) => Reflect.get(URL.prototype, key, url)
-
-const nativeSet = (url, key, value) =>
-  Reflect.set(URL.prototype, key, value, url)
+const HREF = URL_ACCESSOR.href
 
 class ParseProxyError extends TypeError {
   constructor (props) {
@@ -37,13 +29,15 @@ const invalidProxy = value =>
   })
 
 // `URLSearchParams` writes straight through to `search`, out of reach of the
-// accessors below. A proxy URI never carries a query, so this one is empty,
-// detached and shared: reads are accurate, writes are refused.
+// accessors below. A proxy URI never carries a query, so this one is empty and
+// detached: reads are accurate, writes are refused.
 const SEALED_SEARCH_PARAMS = new URLSearchParams()
 for (const key of ['append', 'delete', 'set', 'sort']) {
-  SEALED_SEARCH_PARAMS[key] = value => {
-    throw invalidProxy(value)
-  }
+  Object.defineProperty(SEALED_SEARCH_PARAMS, key, {
+    value: value => {
+      throw invalidProxy(value)
+    }
+  })
 }
 
 const hasControlChars = value => {
@@ -55,6 +49,7 @@ const hasControlChars = value => {
 }
 
 const decodeOrThrow = value => {
+  if (!value.includes('%')) return value
   try {
     return decodeURIComponent(value)
   } catch (_) {
@@ -86,46 +81,51 @@ const rawHostname = proxy => {
   return hostEnd === -1 ? authority : authority.slice(0, hostEnd)
 }
 
-// Only a mutation that can introduce a new host needs the pre-normalization
-// token; for the rest the current hostname is already canonical.
-const RAW_HOSTNAME = {
-  href: value => rawHostname(value),
-  host: value => rawHostname(`x://${value}`),
-  hostname: value => String(value)
+// How each assignment differs from `set it, then re-check the whole proxy`.
+// Only one that can name a new host needs the pre-normalization token; for the
+// rest the hostname in hand is already canonical.
+const MUTATION = {
+  username: { encode: true },
+  password: { encode: true },
+  href: { rawHost: rawHostname },
+  host: { rawHost: value => rawHostname(`x://${value}`) },
+  hostname: { rawHost: String }
 }
 
 const assertValidProxy = (url, rawHost = url.hostname) => {
+  const { hostname, pathname } = url
   const user = decodeOrThrow(url.username)
   const pass = decodeOrThrow(url.password)
 
   if (
-    !url.hostname ||
-    (url.pathname !== '' && url.pathname !== '/') ||
+    !hostname ||
+    (pathname !== '' && pathname !== '/') ||
     url.search !== '' ||
     url.hash !== '' ||
     hasControlChars(user) ||
     hasControlChars(pass) ||
-    (isIP(url.hostname) === 4 && decodeOrThrow(rawHost) !== url.hostname)
+    (isIP(hostname) === 4 && decodeOrThrow(rawHost) !== hostname)
   ) {
     throw new TypeError('Invalid proxy')
   }
 }
 
-// `auth` is the only own property, so spreading a proxy yields just the
-// credentials a caller asked for and never the raw ones.
+// Own rather than inherited, so spreading a proxy yields the credentials a
+// caller asked for and never the raw ones.
 const AUTH = {
   enumerable: true,
   get () {
-    const user = decodeURIComponent(this.username)
-    const pass = decodeURIComponent(this.password)
+    const user = decodeOrThrow(this.username)
+    const pass = decodeOrThrow(this.password)
     return user || pass ? `${user}:${pass}` : ''
   }
 }
 
 class ProxyURL extends URL {
   constructor (proxy) {
+    proxy = String(proxy)
     const rawHost = rawHostname(proxy)
-    super(String(proxy))
+    super(proxy)
     assertValidProxy(this, rawHost)
     Object.defineProperty(this, 'auth', AUTH)
   }
@@ -145,26 +145,23 @@ class ProxyURL extends URL {
   }
 }
 
-// Every mutation runs the same check the constructor ran, and unwinds through
-// `href` when it fails, so a parsed proxy can never become one `parseProxy`
-// would have rejected.
-for (const key of MUTABLE_KEYS) {
-  const rawHostnameOf = RAW_HOSTNAME[key]
-  const encode = ENCODED_KEYS.has(key)
+for (const key of Object.keys(URL_ACCESSOR)) {
+  const { get, set } = URL_ACCESSOR[key]
+  const { encode, rawHost: rawHostOf } = MUTATION[key] ?? {}
 
   Object.defineProperty(ProxyURL.prototype, key, {
     configurable: true,
     get () {
-      return nativeGet(this, key)
+      return get.call(this)
     },
     set (value) {
-      const previous = nativeGet(this, 'href')
+      const previous = HREF.get.call(this)
       try {
-        const rawHost = rawHostnameOf && rawHostnameOf(value)
-        nativeSet(this, key, encode ? encodePercents(value) : value)
+        const rawHost = rawHostOf && rawHostOf(value)
+        set.call(this, encode ? encodePercents(value) : value)
         assertValidProxy(this, rawHost)
       } catch (_) {
-        nativeSet(this, 'href', previous)
+        HREF.set.call(this, previous)
         throw invalidProxy(value)
       }
     }
