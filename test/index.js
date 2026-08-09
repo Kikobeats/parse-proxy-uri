@@ -400,8 +400,8 @@ test('protocol mutation cannot smuggle in an IPv4 rewrite', t => {
 })
 
 test('protocol mutation rejects schemes the URL parser would trim', t => {
-  // `href` silently drops leading whitespace, so ` socks5` would land as
-  // `http:` — accepted, but not the scheme the caller asked for.
+  // `href` strips stray whitespace before parsing, so the write succeeds under
+  // a scheme the caller never spelled; the read-back refuses the mismatch.
   assertRejectedMutations(t, 'protocol', [' socks5', 'socks5\n', '\thttp'])
 })
 
