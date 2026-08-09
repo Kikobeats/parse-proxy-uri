@@ -23,14 +23,14 @@ class ParseProxyError extends TypeError {
   }
 }
 
-const invalid = value => {
+const throwInvalid = value => {
   throw new ParseProxyError(value)
 }
 
 // Detached: URLSearchParams writes bypass the `search` accessor below.
 const SEALED_SEARCH_PARAMS = new URLSearchParams()
 for (const key of ['append', 'delete', 'set', 'sort']) {
-  Object.defineProperty(SEALED_SEARCH_PARAMS, key, { value: invalid })
+  Object.defineProperty(SEALED_SEARCH_PARAMS, key, { value: throwInvalid })
 }
 
 const hasControlChars = value => {
@@ -46,7 +46,7 @@ const decodeOrThrow = value => {
   try {
     return decodeURIComponent(value)
   } catch (_) {
-    invalid(value)
+    throwInvalid(value)
   }
 }
 
@@ -75,7 +75,7 @@ const hostToken = authority => {
 const rawAuthority = proxy => {
   proxy = String(proxy)
   const schemeEnd = proxy.indexOf('://')
-  if (schemeEnd === -1) invalid(proxy)
+  if (schemeEnd === -1) throwInvalid(proxy)
   return proxy.slice(schemeEnd + 3)
 }
 
@@ -85,7 +85,7 @@ const writeProtocol = function (value) {
   value = String(value).toLowerCase()
   if (!value.endsWith(':')) value += ':'
   HREF.set.call(this, `${value}//${rawAuthority(HREF.get.call(this))}`)
-  if (this.protocol !== value) invalid(value)
+  if (this.protocol !== value) throwInvalid(value)
 }
 
 // Without `authority` the write cannot name a host, so the loop holds it to the
@@ -114,7 +114,7 @@ const assertValidProxy = (url, authority) => {
     (isCanonicalIPv4(hostname) &&
       decodeOrThrow(hostToken(authority)) !== hostname)
   ) {
-    invalid(url.href)
+    throwInvalid(url.href)
   }
 }
 
@@ -163,7 +163,7 @@ for (const key of Object.keys(URL_ACCESSOR)) {
         assertValidProxy(this, requested)
       } catch (_) {
         HREF.set.call(this, previous)
-        invalid(value)
+        throwInvalid(value)
       }
     }
   })
@@ -176,7 +176,7 @@ module.exports = proxy => {
   try {
     return new ProxyURL(proxy)
   } catch (_) {
-    invalid(proxy)
+    throwInvalid(proxy)
   }
 }
 
