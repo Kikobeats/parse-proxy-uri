@@ -84,34 +84,31 @@ const rawAuthority = proxy => {
   return proxy.slice(schemeEnd + 3)
 }
 
+// Serialized userinfo, including the trailing `@` when credentials exist.
+const userinfo = url => {
+  if (!url.username && !url.password) return ''
+  return `${url.password ? `${url.username}:${url.password}` : url.username}@`
+}
+
+// WHATWG ignores protocol switches across the special/non-special boundary
+// (`http:` ↔ `socks5:`), so assign via href, which does accept them.
+const applyProtocol = (url, value) => {
+  value = String(value).toLowerCase()
+  if (!value.endsWith(':')) value += ':'
+  HREF.set.call(url, `${value}//${userinfo(url)}${url.host}`)
+  if (url.protocol !== value) throw new ParseProxyError(value)
+}
+
 // Only an assignment that can name a new host carries `authority`; for the rest
-// the hostname in hand is already one, and already canonical.
+// the hostname in hand is already one, and already canonical. `apply` replaces
+// the native setter when the platform write is the wrong tool.
 const MUTATION = {
   username: { encode: true },
   password: { encode: true },
   href: { authority: rawAuthority },
   host: { authority: String },
-  hostname: { authority: String }
-}
-
-const normalizeProtocol = value => {
-  value = String(value).toLowerCase()
-  return value.endsWith(':') ? value : `${value}:`
-}
-
-// WHATWG ignores switches between special and non-special schemes, so
-// `http:` ↔ `socks5:` would otherwise silently no-op.
-const applyProtocol = (url, value) => {
-  const next = normalizeProtocol(value)
-  URL_ACCESSOR.protocol.set.call(url, next)
-  if (url.protocol === next) return
-
-  const userinfo =
-    url.username || url.password
-      ? `${url.username}${url.password ? `:${url.password}` : ''}@`
-      : ''
-  HREF.set.call(url, `${next}//${userinfo}${url.host}`)
-  if (url.protocol !== next) throw new ParseProxyError(value)
+  hostname: { authority: String },
+  protocol: { apply: applyProtocol }
 }
 
 const assertValidProxy = (url, authority = url.hostname) => {
@@ -157,19 +154,16 @@ class ProxyURL extends URL {
   }
 
   toString () {
-    if (!this.username && !this.password) {
-      return `${this.protocol}//${this.host}`
-    }
-    const userinfo = this.password
-      ? `${this.username}:${this.password}`
-      : this.username
-    return `${this.protocol}//${userinfo}@${this.host}`
+    return `${this.protocol}//${userinfo(this)}${this.host}`
   }
 }
 
 for (const key of Object.keys(URL_ACCESSOR)) {
   const { get, set } = URL_ACCESSOR[key]
-  const { encode, authority: authorityOf } = MUTATION[key] ?? {}
+  const { encode, authority: authorityOf, apply } = MUTATION[key] ?? {}
+  const write =
+    apply ??
+    ((url, value) => set.call(url, encode ? encodePercents(value) : value))
 
   Object.defineProperty(ProxyURL.prototype, key, {
     configurable: true,
@@ -178,8 +172,7 @@ for (const key of Object.keys(URL_ACCESSOR)) {
       const previous = HREF.get.call(this)
       try {
         const authority = authorityOf?.(value)
-        if (key === 'protocol') applyProtocol(this, value)
-        else set.call(this, encode ? encodePercents(value) : value)
+        write(this, value)
         assertValidProxy(this, authority)
       } catch (_) {
         HREF.set.call(this, previous)
