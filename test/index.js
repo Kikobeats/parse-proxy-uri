@@ -367,19 +367,24 @@ test('protocol switches between http and socks schemes', t => {
 
   // WHATWG leaves special↔non-special protocol sets unchanged; ProxyURL must
   // still apply the socks switch or callers keep dialing HTTP CONNECT.
-  parsedProxy.protocol = 'socks5:'
-  t.is(parsedProxy.protocol, 'socks5:')
-  t.is(parsedProxy.toString(), 'socks5://alice:TopSecret@trusted.proxy:8443')
-  t.is(parsedProxy.auth, 'alice:TopSecret')
+  const switches = [
+    ['socks5:', 'socks5:', 'socks5://alice:TopSecret@trusted.proxy:8443'],
+    ['http', 'http:', TRUSTED],
+    ['SOCKS5H:', 'socks5h:', 'socks5h://alice:TopSecret@trusted.proxy:8443']
+  ]
 
-  parsedProxy.protocol = 'http'
-  t.is(parsedProxy.protocol, 'http:')
-  t.is(parsedProxy.toString(), TRUSTED)
-  t.is(parsedProxy.auth, 'alice:TopSecret')
+  for (const [input, protocol, href] of switches) {
+    parsedProxy.protocol = input
+    t.is(parsedProxy.protocol, protocol, input)
+    t.is(parsedProxy.toString(), href, input)
+    t.is(parsedProxy.auth, 'alice:TopSecret', input)
+  }
+})
 
-  parsedProxy.protocol = 'SOCKS5H:'
-  t.is(parsedProxy.protocol, 'socks5h:')
-  t.is(parsedProxy.toString(), 'socks5h://alice:TopSecret@trusted.proxy:8443')
+test('protocol mutation rejects schemes the URL parser would trim', t => {
+  // `href` silently drops leading whitespace, so ` socks5` would land as
+  // `http:` — accepted, but not the scheme the caller asked for.
+  assertRejectedMutations(t, 'protocol', [' socks5', 'socks5\n', '\thttp'])
 })
 
 test('searchParams cannot smuggle a query past the setters', t => {
@@ -541,6 +546,16 @@ test('accept canonical dotted-decimal IPv4 hosts', t => {
   const parsedProxy = parseProxy('http://127.0.0.1:8080')
   t.is(parsedProxy.hostname, '127.0.0.1')
   t.is(parsedProxy.toString(), 'http://127.0.0.1:8080')
+})
+
+test('mutations that cannot rename an IPv4 host reuse the parsed hostname', t => {
+  const parsedProxy = parseProxy('http://127.0.0.1:8080')
+
+  parsedProxy.port = '9999'
+  t.is(parsedProxy.toString(), 'http://127.0.0.1:9999')
+
+  parsedProxy.protocol = 'socks5:'
+  t.is(parsedProxy.toString(), 'socks5://127.0.0.1:9999')
 })
 
 test('read the raw IPv4 host past credentials and a trailing slash', t => {

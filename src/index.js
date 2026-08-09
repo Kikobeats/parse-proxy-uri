@@ -48,23 +48,25 @@ const decodeOrThrow = value => {
   }
 }
 
-// Hostnames rarely end in a digit — skip `isIP` for the common case.
+// `isIP` matches IPv4 only as a dotted-quad, which always ends in a digit.
 const isCanonicalIPv4 = hostname => {
   const last = hostname.charCodeAt(hostname.length - 1)
   return last >= 48 && last <= 57 && isIP(hostname) === 4
 }
 
 // WHATWG userinfo setters leave raw `%` alone, so encode it first.
-const encodePercents = value => String(value).replace(/%/g, '%25')
+const PERCENT = /%/g
+const encodePercents = value => String(value).replace(PERCENT, '%25')
 
 // Host token before WHATWG IPv4 normalization (e.g. 2130706433 → 127.0.0.1).
+const PATH_START = /[/?#]/
 const hostToken = authority => {
-  let end = authority.search(/[/?#]/)
-  if (end !== -1) authority = authority.slice(0, end)
-  end = authority.indexOf('@')
-  if (end !== -1) authority = authority.slice(end + 1)
-  end = authority.indexOf(':')
-  return end === -1 ? authority : authority.slice(0, end)
+  const pathIndex = authority.search(PATH_START)
+  if (pathIndex !== -1) authority = authority.slice(0, pathIndex)
+  const userinfoEnd = authority.indexOf('@')
+  if (userinfoEnd !== -1) authority = authority.slice(userinfoEnd + 1)
+  const portStart = authority.indexOf(':')
+  return portStart === -1 ? authority : authority.slice(0, portStart)
 }
 
 // Without `://`, WHATWG reads `host:port` / `http:8080` as the wrong host.
@@ -83,50 +85,38 @@ const serialize = (url, protocol = url.protocol) => {
 }
 
 // WHATWG ignores special↔non-special protocol switches; href accepts them.
-const applyProtocol = (url, value) => {
+const writeProtocol = function (value) {
   value = String(value).toLowerCase()
   if (!value.endsWith(':')) value += ':'
-  HREF.set.call(url, serialize(url, value))
-  if (url.protocol !== value) invalid(value)
+  HREF.set.call(this, serialize(this, value))
+  if (this.protocol !== value) invalid(value)
 }
 
-// Mutators may return an authority token when the write can rename the host.
-const encodeCredentials = (url, value, set) => {
-  set.call(url, encodePercents(value))
-}
-
-const assignHost = (url, value, set) => {
-  const authority = String(value)
-  set.call(url, value)
-  return authority
-}
-
+// `encode` rewrites the value before the write, `authority` names the host the
+// write is asking for, `write` replaces the native setter. All three optional.
 const MUTATION = {
-  username: encodeCredentials,
-  password: encodeCredentials,
-  href (url, value, set) {
-    const authority = rawAuthority(value)
-    set.call(url, value)
-    return authority
-  },
-  host: assignHost,
-  hostname: assignHost,
-  protocol: applyProtocol
+  username: { encode: encodePercents },
+  password: { encode: encodePercents },
+  href: { authority: rawAuthority },
+  host: { authority: String },
+  hostname: { authority: String },
+  protocol: { write: writeProtocol }
 }
 
-const assertValidProxy = (url, authority = url.hostname) => {
+const assertValidProxy = (url, authority) => {
+  const { hostname, pathname } = url
   const user = decodeOrThrow(url.username)
   const pass = decodeOrThrow(url.password)
 
   if (
-    !url.hostname ||
-    !['', '/'].includes(url.pathname) ||
-    url.search ||
-    url.hash ||
+    !hostname ||
+    (pathname !== '' && pathname !== '/') ||
+    url.search !== '' ||
+    url.hash !== '' ||
     hasControlChars(user) ||
     hasControlChars(pass) ||
-    (isCanonicalIPv4(url.hostname) &&
-      decodeOrThrow(hostToken(authority)) !== url.hostname)
+    (isCanonicalIPv4(hostname) &&
+      decodeOrThrow(hostToken(authority ?? hostname)) !== hostname)
   ) {
     invalid(url.href)
   }
@@ -161,8 +151,7 @@ class ProxyURL extends URL {
 
 for (const key of Object.keys(URL_ACCESSOR)) {
   const { get, set } = URL_ACCESSOR[key]
-  const mutate =
-    MUTATION[key] ?? ((url, value, native) => native.call(url, value))
+  const { encode, authority, write = set } = MUTATION[key] ?? {}
 
   Object.defineProperty(ProxyURL.prototype, key, {
     configurable: true,
@@ -170,7 +159,9 @@ for (const key of Object.keys(URL_ACCESSOR)) {
     set (value) {
       const previous = HREF.get.call(this)
       try {
-        assertValidProxy(this, mutate(this, value, set))
+        const token = authority?.(value)
+        write.call(this, encode ? encode(value) : value)
+        assertValidProxy(this, token)
       } catch (_) {
         HREF.set.call(this, previous)
         invalid(value)
