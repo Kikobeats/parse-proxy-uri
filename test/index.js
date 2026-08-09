@@ -28,9 +28,12 @@ const assertInvalidProxies = (t, inputs) => {
 
 const TRUSTED = 'http://alice:TopSecret@trusted.proxy:8443'
 
-const assertRejectedMutations = (t, key, values) => {
+const assertRejectedMutations = (t, key, values, proxy = TRUSTED) => {
   for (const value of values) {
-    const parsedProxy = parseProxy(TRUSTED)
+    const parsedProxy = parseProxy(proxy)
+    const { href, auth } = parsedProxy
+    const serialized = parsedProxy.toString()
+
     const error = t.throws(
       () => {
         parsedProxy[key] = value
@@ -38,9 +41,9 @@ const assertRejectedMutations = (t, key, values) => {
       { instanceOf: TypeError }
     )
     t.is(error.code, 'INVALID_PROXY')
-    t.is(parsedProxy.toString(), TRUSTED)
-    t.is(parsedProxy.href, `${TRUSTED}/`)
-    t.is(parsedProxy.auth, 'alice:TopSecret')
+    t.is(parsedProxy.toString(), serialized)
+    t.is(parsedProxy.href, href)
+    t.is(parsedProxy.auth, auth)
   }
 }
 
@@ -365,17 +368,34 @@ test('protocol mutation applies every scheme family', t => {
   // WHATWG leaves special↔non-special protocol sets unchanged; ProxyURL must
   // still apply the socks switch or callers keep dialing HTTP CONNECT.
   const switches = [
-    ['ftp:', 'ftp:', 'ftp://alice:TopSecret@trusted.proxy:8443'],
-    ['socks5:', 'socks5:', 'socks5://alice:TopSecret@trusted.proxy:8443'],
-    ['http', 'http:', TRUSTED],
-    ['SOCKS5H:', 'socks5h:', 'socks5h://alice:TopSecret@trusted.proxy:8443']
+    ['ftp:', 'ftp:'],
+    ['socks5:', 'socks5:'],
+    ['http', 'http:'],
+    ['SOCKS5H:', 'socks5h:']
   ]
 
-  for (const [input, protocol, href] of switches) {
+  for (const [input, protocol] of switches) {
     parsedProxy.protocol = input
     t.is(parsedProxy.protocol, protocol, input)
-    t.is(parsedProxy.toString(), href, input)
     t.is(parsedProxy.auth, 'alice:TopSecret', input)
+    t.is(
+      parsedProxy.toString(),
+      `${protocol}//alice:TopSecret@trusted.proxy:8443`,
+      input
+    )
+  }
+})
+
+test('protocol mutation cannot smuggle in an IPv4 rewrite', t => {
+  // Only special schemes normalize integer hosts, so switching into one would
+  // silently retarget a proxy the constructor accepts as an opaque name.
+  const opaque = [
+    'socks5://2130706433',
+    'socks5://0x7f000001',
+    'socks5://127.1'
+  ]
+  for (const proxy of opaque) {
+    assertRejectedMutations(t, 'protocol', ['http:', 'https:'], proxy)
   }
 })
 

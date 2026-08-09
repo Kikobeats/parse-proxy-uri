@@ -85,13 +85,14 @@ const writeProtocol = function (value) {
   value = String(value).toLowerCase()
   if (!value.endsWith(':')) value += ':'
   const href = HREF.get.call(this)
-  const authorityStart = href.indexOf('://') + 1
-  HREF.set.call(this, value + href.slice(authorityStart))
+  HREF.set.call(this, value + href.slice(href.indexOf('//')))
   if (this.protocol !== value) invalid(value)
 }
 
-// `encode` rewrites the value before the write, `authority` names the host the
-// write is asking for, `write` replaces the native setter. All three optional.
+// `encode` rewrites the value before the write, `authority` reads the host the
+// write asks for out of it, `write` replaces the native setter. All optional —
+// without `authority` the write may not rename the host, and the loop holds it
+// to the hostname it had going in.
 const MUTATION = {
   username: { encode: encodePercents },
   password: { encode: encodePercents },
@@ -113,8 +114,7 @@ const assertValidProxy = (url, authority) => {
     url.hash !== '' ||
     hasControlChars(user) ||
     hasControlChars(pass) ||
-    (authority !== undefined &&
-      isCanonicalIPv4(hostname) &&
+    (isCanonicalIPv4(hostname) &&
       decodeOrThrow(hostToken(authority)) !== hostname)
   ) {
     invalid(url.href)
@@ -161,9 +161,9 @@ for (const key of Object.keys(URL_ACCESSOR)) {
     set (value) {
       const previous = HREF.get.call(this)
       try {
-        const token = authority?.(value)
+        const requestedHost = authority ? authority(value) : this.hostname
         write.call(this, encode ? encode(value) : value)
-        assertValidProxy(this, token)
+        assertValidProxy(this, requestedHost)
       } catch (_) {
         HREF.set.call(this, previous)
         invalid(value)
