@@ -58,7 +58,10 @@ const isCanonicalIPv4 = hostname => {
 
 // WHATWG userinfo setters leave raw `%` alone, so encode it first.
 const PERCENT_SIGN = /%/g
-const encodePercents = value => String(value).replace(PERCENT_SIGN, '%25')
+const encodePercents = value => {
+  value = String(value)
+  return value.includes('%') ? value.replace(PERCENT_SIGN, '%25') : value
+}
 
 // Host token before WHATWG IPv4 normalization (e.g. 2130706433 → 127.0.0.1).
 const PATH_START = /[/?#]/
