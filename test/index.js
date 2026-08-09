@@ -348,26 +348,24 @@ test('every URL setter is guarded', t => {
   }
 })
 
-test('protocol and port mutation stay within proxy shape', t => {
+test('port mutation stays within proxy shape', t => {
   const parsedProxy = parseProxy(TRUSTED)
 
-  parsedProxy.protocol = 'ftp:'
-  t.is(parsedProxy.toString(), 'ftp://alice:TopSecret@trusted.proxy:8443')
-
   parsedProxy.port = '9999'
-  t.is(parsedProxy.toString(), 'ftp://alice:TopSecret@trusted.proxy:9999')
+  t.is(parsedProxy.toString(), 'http://alice:TopSecret@trusted.proxy:9999')
 
   parsedProxy.port = ''
-  t.is(parsedProxy.toString(), 'ftp://alice:TopSecret@trusted.proxy')
+  t.is(parsedProxy.toString(), 'http://alice:TopSecret@trusted.proxy')
   t.is(parsedProxy.auth, 'alice:TopSecret')
 })
 
-test('protocol switches between http and socks schemes', t => {
+test('protocol mutation applies every scheme family', t => {
   const parsedProxy = parseProxy(TRUSTED)
 
   // WHATWG leaves special↔non-special protocol sets unchanged; ProxyURL must
   // still apply the socks switch or callers keep dialing HTTP CONNECT.
   const switches = [
+    ['ftp:', 'ftp:', 'ftp://alice:TopSecret@trusted.proxy:8443'],
     ['socks5:', 'socks5:', 'socks5://alice:TopSecret@trusted.proxy:8443'],
     ['http', 'http:', TRUSTED],
     ['SOCKS5H:', 'socks5h:', 'socks5h://alice:TopSecret@trusted.proxy:8443']

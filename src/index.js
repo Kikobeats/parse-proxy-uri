@@ -11,12 +11,14 @@ for (const key of Object.getOwnPropertyNames(URL.prototype)) {
 
 const HREF = URL_ACCESSOR.href
 
+const INVALID_PROXY = 'INVALID_PROXY'
+
 class ParseProxyError extends TypeError {
   constructor (value) {
     const description = `The value \`${value}\` can't be parsed as proxy`
-    super(`INVALID_PROXY, ${description}`)
+    super(`${INVALID_PROXY}, ${description}`)
     this.name = 'ParseProxyError'
-    this.code = 'INVALID_PROXY'
+    this.code = INVALID_PROXY
     this.description = description
   }
 }
@@ -55,8 +57,8 @@ const isCanonicalIPv4 = hostname => {
 }
 
 // WHATWG userinfo setters leave raw `%` alone, so encode it first.
-const PERCENT = /%/g
-const encodePercents = value => String(value).replace(PERCENT, '%25')
+const PERCENT_SIGN = /%/g
+const encodePercents = value => String(value).replace(PERCENT_SIGN, '%25')
 
 // Host token before WHATWG IPv4 normalization (e.g. 2130706433 → 127.0.0.1).
 const PATH_START = /[/?#]/
@@ -77,18 +79,14 @@ const rawAuthority = proxy => {
   return proxy.slice(schemeEnd + 3)
 }
 
-const serialize = (url, protocol = url.protocol) => {
-  const { username, password, host } = url
-  if (!username && !password) return `${protocol}//${host}`
-  const creds = password ? `${username}:${password}` : username
-  return `${protocol}//${creds}@${host}`
-}
-
-// WHATWG ignores special↔non-special protocol switches; href accepts them.
+// WHATWG ignores special↔non-special protocol switches; href accepts them, so
+// the scheme is spliced onto the current href and everything else re-validated.
 const writeProtocol = function (value) {
   value = String(value).toLowerCase()
   if (!value.endsWith(':')) value += ':'
-  HREF.set.call(this, serialize(this, value))
+  const href = HREF.get.call(this)
+  const authorityStart = href.indexOf('://') + 1
+  HREF.set.call(this, value + href.slice(authorityStart))
   if (this.protocol !== value) invalid(value)
 }
 
@@ -115,8 +113,9 @@ const assertValidProxy = (url, authority) => {
     url.hash !== '' ||
     hasControlChars(user) ||
     hasControlChars(pass) ||
-    (isCanonicalIPv4(hostname) &&
-      decodeOrThrow(hostToken(authority ?? hostname)) !== hostname)
+    (authority !== undefined &&
+      isCanonicalIPv4(hostname) &&
+      decodeOrThrow(hostToken(authority)) !== hostname)
   ) {
     invalid(url.href)
   }
@@ -145,7 +144,10 @@ class ProxyURL extends URL {
   }
 
   toString () {
-    return serialize(this)
+    const { protocol, username, password, host } = this
+    if (!username && !password) return `${protocol}//${host}`
+    const userinfo = password ? `${username}:${password}` : username
+    return `${protocol}//${userinfo}@${host}`
   }
 }
 
