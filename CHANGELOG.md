@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### 2.0.13 (2026-08-09)
+
+
+### Bug Fixes
+
+* apply http↔socks protocol mutations ([#28](https://github.com/Kikobeats/parse-proxy-uri/issues/28)) ([5175bdd](https://github.com/Kikobeats/parse-proxy-uri/commit/5175bdd8883dec53d8210778691bc70153edf82b))
+
 ### 2.0.12 (2026-08-07)
 
 
