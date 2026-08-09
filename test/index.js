@@ -28,9 +28,12 @@ const assertInvalidProxies = (t, inputs) => {
 
 const TRUSTED = 'http://alice:TopSecret@trusted.proxy:8443'
 
-const assertRejectedMutations = (t, key, values) => {
+const assertRejectedMutations = (t, key, values, proxy = TRUSTED) => {
   for (const value of values) {
-    const parsedProxy = parseProxy(TRUSTED)
+    const parsedProxy = parseProxy(proxy)
+    const { href, auth } = parsedProxy
+    const serialized = parsedProxy.toString()
+
     const error = t.throws(
       () => {
         parsedProxy[key] = value
@@ -38,9 +41,9 @@ const assertRejectedMutations = (t, key, values) => {
       { instanceOf: TypeError }
     )
     t.is(error.code, 'INVALID_PROXY')
-    t.is(parsedProxy.toString(), TRUSTED)
-    t.is(parsedProxy.href, `${TRUSTED}/`)
-    t.is(parsedProxy.auth, 'alice:TopSecret')
+    t.is(parsedProxy.toString(), serialized)
+    t.is(parsedProxy.href, href)
+    t.is(parsedProxy.auth, auth)
   }
 }
 
@@ -348,18 +351,58 @@ test('every URL setter is guarded', t => {
   }
 })
 
-test('protocol and port mutation stay within proxy shape', t => {
+test('port mutation stays within proxy shape', t => {
   const parsedProxy = parseProxy(TRUSTED)
 
-  parsedProxy.protocol = 'ftp:'
-  t.is(parsedProxy.toString(), 'ftp://alice:TopSecret@trusted.proxy:8443')
-
   parsedProxy.port = '9999'
-  t.is(parsedProxy.toString(), 'ftp://alice:TopSecret@trusted.proxy:9999')
+  t.is(parsedProxy.toString(), 'http://alice:TopSecret@trusted.proxy:9999')
 
   parsedProxy.port = ''
-  t.is(parsedProxy.toString(), 'ftp://alice:TopSecret@trusted.proxy')
+  t.is(parsedProxy.toString(), 'http://alice:TopSecret@trusted.proxy')
   t.is(parsedProxy.auth, 'alice:TopSecret')
+})
+
+test('protocol mutation applies every scheme family', t => {
+  const parsedProxy = parseProxy(TRUSTED)
+
+  // WHATWG leaves special↔non-special protocol sets unchanged; ProxyURL must
+  // still apply the socks switch or callers keep dialing HTTP CONNECT.
+  const switches = [
+    ['ftp:', 'ftp:'],
+    ['socks5:', 'socks5:'],
+    ['http', 'http:'],
+    ['SOCKS5H:', 'socks5h:']
+  ]
+
+  for (const [input, protocol] of switches) {
+    parsedProxy.protocol = input
+    t.is(parsedProxy.protocol, protocol, input)
+    t.is(parsedProxy.auth, 'alice:TopSecret', input)
+    t.is(
+      parsedProxy.toString(),
+      `${protocol}//alice:TopSecret@trusted.proxy:8443`,
+      input
+    )
+  }
+})
+
+test('protocol mutation cannot smuggle in an IPv4 rewrite', t => {
+  // Only special schemes normalize integer hosts, so switching into one would
+  // silently retarget a proxy the constructor accepts as an opaque name.
+  const opaque = [
+    'socks5://2130706433',
+    'socks5://0x7f000001',
+    'socks5://127.1'
+  ]
+  for (const proxy of opaque) {
+    assertRejectedMutations(t, 'protocol', ['http:', 'https:'], proxy)
+  }
+})
+
+test('protocol mutation rejects schemes the URL parser would trim', t => {
+  // `href` strips stray whitespace before parsing, so the write succeeds under
+  // a scheme the caller never spelled; the read-back refuses the mismatch.
+  assertRejectedMutations(t, 'protocol', [' socks5', 'socks5\n', '\thttp'])
 })
 
 test('searchParams cannot smuggle a query past the setters', t => {
@@ -521,6 +564,16 @@ test('accept canonical dotted-decimal IPv4 hosts', t => {
   const parsedProxy = parseProxy('http://127.0.0.1:8080')
   t.is(parsedProxy.hostname, '127.0.0.1')
   t.is(parsedProxy.toString(), 'http://127.0.0.1:8080')
+})
+
+test('mutations that cannot rename an IPv4 host reuse the parsed hostname', t => {
+  const parsedProxy = parseProxy('http://127.0.0.1:8080')
+
+  parsedProxy.port = '9999'
+  t.is(parsedProxy.toString(), 'http://127.0.0.1:9999')
+
+  parsedProxy.protocol = 'socks5:'
+  t.is(parsedProxy.toString(), 'socks5://127.0.0.1:9999')
 })
 
 test('read the raw IPv4 host past credentials and a trailing slash', t => {

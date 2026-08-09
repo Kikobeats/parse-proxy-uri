@@ -2,8 +2,7 @@
 
 const { isIP } = require('net')
 
-// Whatever WHATWG lets you assign is what has to be guarded, so the set is read
-// off the platform rather than hand-kept.
+// Guard every WHATWG-assignable field — the set is read off the platform.
 const URL_ACCESSOR = {}
 for (const key of Object.getOwnPropertyNames(URL.prototype)) {
   const accessor = Object.getOwnPropertyDescriptor(URL.prototype, key)
@@ -12,26 +11,26 @@ for (const key of Object.getOwnPropertyNames(URL.prototype)) {
 
 const HREF = URL_ACCESSOR.href
 
+const INVALID_PROXY = 'INVALID_PROXY'
+
 class ParseProxyError extends TypeError {
   constructor (value) {
-    super()
+    const description = `The value \`${value}\` can't be parsed as proxy`
+    super(`${INVALID_PROXY}, ${description}`)
     this.name = 'ParseProxyError'
-    this.code = 'INVALID_PROXY'
-    this.description = `The value \`${value}\` can't be parsed as proxy`
-    this.message = `${this.code}, ${this.description}`
+    this.code = INVALID_PROXY
+    this.description = description
   }
 }
 
-// `URLSearchParams` writes straight through to `search`, out of reach of the
-// accessors below. A proxy URI never carries a query, so this one is empty and
-// detached: reads are accurate, writes are refused.
+const throwInvalid = value => {
+  throw new ParseProxyError(value)
+}
+
+// Detached: URLSearchParams writes bypass the `search` accessor below.
 const SEALED_SEARCH_PARAMS = new URLSearchParams()
 for (const key of ['append', 'delete', 'set', 'sort']) {
-  Object.defineProperty(SEALED_SEARCH_PARAMS, key, {
-    value: value => {
-      throw new ParseProxyError(value)
-    }
-  })
+  Object.defineProperty(SEALED_SEARCH_PARAMS, key, { value: throwInvalid })
 }
 
 const hasControlChars = value => {
@@ -47,54 +46,63 @@ const decodeOrThrow = value => {
   try {
     return decodeURIComponent(value)
   } catch (_) {
-    throw new ParseProxyError(value)
+    throwInvalid(value)
   }
 }
 
-// `isIP` matches IPv4 only as dotted-quad, which always ends in a digit — worth
-// ruling out first, since a proxy host is usually a name.
+// `isIP` matches IPv4 only as a dotted-quad, which always ends in a digit.
 const isCanonicalIPv4 = hostname => {
   const last = hostname.charCodeAt(hostname.length - 1)
   return last >= 48 && last <= 57 && isIP(hostname) === 4
 }
 
-// WHATWG userinfo setters percent-encode everything except `%` itself, so a raw
-// `%` would later read back as the start of an escape.
-const encodePercents = value => String(value).replace(/%/g, '%25')
-
-// Host token before WHATWG IPv4 normalization (e.g. 2130706433 → 127.0.0.1).
-const hostToken = authority => {
-  const pathIndex = authority.search(/[/?#]/)
-  const atIndex = authority.indexOf('@')
-
-  if (atIndex !== -1 && (pathIndex === -1 || atIndex < pathIndex)) {
-    authority = authority.slice(atIndex + 1)
-  }
-
-  const hostEnd = authority.search(/[:/?#]/)
-  return hostEnd === -1 ? authority : authority.slice(0, hostEnd)
+// WHATWG userinfo setters leave raw `%` alone, so encode it first.
+const PERCENT_SIGN = /%/g
+const encodePercents = value => {
+  value = String(value)
+  return value.includes('%') ? value.replace(PERCENT_SIGN, '%25') : value
 }
 
-// WHATWG turns `host:port` / `http:8080` into wrong hosts, so `://` is
-// required — and without it there is no authority to read.
+// Host token before WHATWG IPv4 normalization (e.g. 2130706433 → 127.0.0.1).
+const PATH_START = /[/?#]/
+const hostToken = authority => {
+  const pathIndex = authority.search(PATH_START)
+  if (pathIndex !== -1) authority = authority.slice(0, pathIndex)
+  const userinfoEnd = authority.indexOf('@')
+  if (userinfoEnd !== -1) authority = authority.slice(userinfoEnd + 1)
+  const portStart = authority.indexOf(':')
+  return portStart === -1 ? authority : authority.slice(0, portStart)
+}
+
+// Without `://`, WHATWG reads `host:port` / `http:8080` as the wrong host.
 const rawAuthority = proxy => {
   proxy = String(proxy)
   const schemeEnd = proxy.indexOf('://')
-  if (schemeEnd === -1) throw new ParseProxyError(proxy)
+  if (schemeEnd === -1) throwInvalid(proxy)
   return proxy.slice(schemeEnd + 3)
 }
 
-// Only an assignment that can name a new host carries `authority`; for the rest
-// the hostname in hand is already one, and already canonical.
-const MUTATION = {
-  username: { encode: true },
-  password: { encode: true },
-  href: { authority: rawAuthority },
-  host: { authority: String },
-  hostname: { authority: String }
+// WHATWG ignores special↔non-special protocol switches; href accepts them, so
+// the scheme is spliced onto the current href and everything else re-validated.
+const writeProtocol = function (value) {
+  value = String(value).toLowerCase()
+  if (!value.endsWith(':')) value += ':'
+  HREF.set.call(this, `${value}//${rawAuthority(HREF.get.call(this))}`)
+  if (this.protocol !== value) throwInvalid(value)
 }
 
-const assertValidProxy = (url, authority = url.hostname) => {
+// Without `authority` the write cannot name a host, so the loop holds it to the
+// hostname it had going in.
+const MUTATION = {
+  username: { encode: encodePercents },
+  password: { encode: encodePercents },
+  href: { authority: rawAuthority },
+  host: { authority: String },
+  hostname: { authority: String },
+  protocol: { write: writeProtocol }
+}
+
+const assertValidProxy = (url, authority) => {
   const { hostname, pathname } = url
   const user = decodeOrThrow(url.username)
   const pass = decodeOrThrow(url.password)
@@ -109,12 +117,11 @@ const assertValidProxy = (url, authority = url.hostname) => {
     (isCanonicalIPv4(hostname) &&
       decodeOrThrow(hostToken(authority)) !== hostname)
   ) {
-    throw new ParseProxyError(url.href)
+    throwInvalid(url.href)
   }
 }
 
-// Own rather than inherited, so spreading a proxy yields the credentials a
-// caller asked for and never the raw ones.
+// Own + enumerable so spreads yield decoded credentials, never raw userinfo.
 const AUTH = {
   enumerable: true,
   get () {
@@ -137,19 +144,16 @@ class ProxyURL extends URL {
   }
 
   toString () {
-    if (!this.username && !this.password) {
-      return `${this.protocol}//${this.host}`
-    }
-    const userinfo = this.password
-      ? `${this.username}:${this.password}`
-      : this.username
-    return `${this.protocol}//${userinfo}@${this.host}`
+    const { protocol, username, password, host } = this
+    if (!username && !password) return `${protocol}//${host}`
+    const userinfo = password ? `${username}:${password}` : username
+    return `${protocol}//${userinfo}@${host}`
   }
 }
 
 for (const key of Object.keys(URL_ACCESSOR)) {
   const { get, set } = URL_ACCESSOR[key]
-  const { encode, authority: authorityOf } = MUTATION[key] ?? {}
+  const { encode, authority, write = set } = MUTATION[key] ?? {}
 
   Object.defineProperty(ProxyURL.prototype, key, {
     configurable: true,
@@ -157,12 +161,12 @@ for (const key of Object.keys(URL_ACCESSOR)) {
     set (value) {
       const previous = HREF.get.call(this)
       try {
-        const authority = authorityOf?.(value)
-        set.call(this, encode ? encodePercents(value) : value)
-        assertValidProxy(this, authority)
+        const requested = authority ? authority(value) : this.hostname
+        write.call(this, encode ? encode(value) : value)
+        assertValidProxy(this, requested)
       } catch (_) {
         HREF.set.call(this, previous)
-        throw new ParseProxyError(value)
+        throwInvalid(value)
       }
     }
   })
@@ -175,7 +179,7 @@ module.exports = proxy => {
   try {
     return new ProxyURL(proxy)
   } catch (_) {
-    throw new ParseProxyError(proxy)
+    throwInvalid(proxy)
   }
 }
 
