@@ -362,6 +362,26 @@ test('protocol and port mutation stay within proxy shape', t => {
   t.is(parsedProxy.auth, 'alice:TopSecret')
 })
 
+test('protocol switches between http and socks schemes', t => {
+  const parsedProxy = parseProxy(TRUSTED)
+
+  // WHATWG leaves special↔non-special protocol sets unchanged; ProxyURL must
+  // still apply the socks switch or callers keep dialing HTTP CONNECT.
+  parsedProxy.protocol = 'socks5:'
+  t.is(parsedProxy.protocol, 'socks5:')
+  t.is(parsedProxy.toString(), 'socks5://alice:TopSecret@trusted.proxy:8443')
+  t.is(parsedProxy.auth, 'alice:TopSecret')
+
+  parsedProxy.protocol = 'http'
+  t.is(parsedProxy.protocol, 'http:')
+  t.is(parsedProxy.toString(), TRUSTED)
+  t.is(parsedProxy.auth, 'alice:TopSecret')
+
+  parsedProxy.protocol = 'SOCKS5H:'
+  t.is(parsedProxy.protocol, 'socks5h:')
+  t.is(parsedProxy.toString(), 'socks5h://alice:TopSecret@trusted.proxy:8443')
+})
+
 test('searchParams cannot smuggle a query past the setters', t => {
   const parsedProxy = parseProxy(TRUSTED)
 

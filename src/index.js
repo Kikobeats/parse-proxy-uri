@@ -94,6 +94,26 @@ const MUTATION = {
   hostname: { authority: String }
 }
 
+const normalizeProtocol = value => {
+  value = String(value).toLowerCase()
+  return value.endsWith(':') ? value : `${value}:`
+}
+
+// WHATWG ignores switches between special and non-special schemes, so
+// `http:` ↔ `socks5:` would otherwise silently no-op.
+const applyProtocol = (url, value) => {
+  const next = normalizeProtocol(value)
+  URL_ACCESSOR.protocol.set.call(url, next)
+  if (url.protocol === next) return
+
+  const userinfo =
+    url.username || url.password
+      ? `${url.username}${url.password ? `:${url.password}` : ''}@`
+      : ''
+  HREF.set.call(url, `${next}//${userinfo}${url.host}`)
+  if (url.protocol !== next) throw new ParseProxyError(value)
+}
+
 const assertValidProxy = (url, authority = url.hostname) => {
   const { hostname, pathname } = url
   const user = decodeOrThrow(url.username)
@@ -158,7 +178,8 @@ for (const key of Object.keys(URL_ACCESSOR)) {
       const previous = HREF.get.call(this)
       try {
         const authority = authorityOf?.(value)
-        set.call(this, encode ? encodePercents(value) : value)
+        if (key === 'protocol') applyProtocol(this, value)
+        else set.call(this, encode ? encodePercents(value) : value)
         assertValidProxy(this, authority)
       } catch (_) {
         HREF.set.call(this, previous)
