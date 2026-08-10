@@ -387,12 +387,15 @@ test('protocol mutation applies every scheme family', t => {
 })
 
 test('protocol mutation cannot smuggle in an IPv4 rewrite', t => {
-  // Only special schemes normalize integer hosts, so switching into one would
-  // silently retarget a proxy the constructor accepts as an opaque name.
+  // Only special schemes normalize integer / percent-decoded hosts, so
+  // switching into one would silently retarget a proxy the constructor
+  // accepts as an opaque name.
   const opaque = [
     'socks5://2130706433',
     'socks5://0x7f000001',
-    'socks5://127.1'
+    'socks5://127.1',
+    'socks5://127%2e0%2e0%2e1:8080',
+    'socks5://%31%32%37%2e%30%2e%30%2e%31:8080'
   ]
   for (const proxy of opaque) {
     assertRejectedMutations(t, 'protocol', ['http:', 'https:'], proxy)

@@ -161,9 +161,14 @@ for (const key of Object.keys(URL_ACCESSOR)) {
     set (value) {
       const previous = HREF.get.call(this)
       try {
-        const requested = authority ? authority(value) : this.hostname
+        // Host-blind writes must keep the hostname they had going in —
+        // special schemes percent-decode and IPv4-normalize, so a socks
+        // opaque name like `127%2e0%2e0%2e1` would otherwise become loopback.
+        const previousHostname = this.hostname
+        const requested = authority ? authority(value) : previousHostname
         write.call(this, encode ? encode(value) : value)
         assertValidProxy(this, requested)
+        if (!authority && this.hostname !== previousHostname) { throwInvalid(value) }
       } catch (_) {
         HREF.set.call(this, previous)
         throwInvalid(value)
