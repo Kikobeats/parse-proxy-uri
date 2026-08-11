@@ -299,6 +299,26 @@ test('host mutation rejects malformed percent-escapes', t => {
   t.is(parsedProxy.toString(), 'http://127.0.0.1:8080')
 })
 
+test('host mutation rejects WHATWG truncation and no-ops', t => {
+  // WHATWG host/hostname setters truncate at @, /, or junk port suffixes and
+  // silently ignore some invalid tokens — ProxyURL must reject and roll back.
+  assertRejectedMutations(t, 'hostname', [
+    'evil.example/admin',
+    'new.proxy:9000',
+    '127.0.0.%zz',
+    '',
+    '::1'
+  ])
+  assertRejectedMutations(t, 'host', [
+    'user:pass@evil.example:1',
+    'evil.example:9000@kept.proxy:1',
+    'evil.example:9000foo',
+    'evil.example:',
+    '[::1]foo',
+    ''
+  ])
+})
+
 test('host mutation accepts canonical hosts', t => {
   const parsedProxy = parseProxy(TRUSTED)
 
@@ -308,6 +328,12 @@ test('host mutation accepts canonical hosts', t => {
   parsedProxy.host = '127.0.0.1:9443'
   t.is(parsedProxy.toString(), 'http://alice:TopSecret@127.0.0.1:9443')
   t.is(parsedProxy.auth, 'alice:TopSecret')
+
+  parsedProxy.host = '[::1]:1080'
+  t.is(parsedProxy.toString(), 'http://alice:TopSecret@[::1]:1080')
+
+  parsedProxy.hostname = '[::1]'
+  t.is(parsedProxy.toString(), 'http://alice:TopSecret@[::1]:1080')
 })
 
 test('path/query/hash mutation is rejected', t => {
@@ -360,6 +386,18 @@ test('port mutation stays within proxy shape', t => {
   parsedProxy.port = ''
   t.is(parsedProxy.toString(), 'http://alice:TopSecret@trusted.proxy')
   t.is(parsedProxy.auth, 'alice:TopSecret')
+})
+
+test('port mutation rejects truncated or out-of-range values', t => {
+  assertRejectedMutations(t, 'port', [
+    '0x50',
+    '8080foo',
+    '08',
+    '65536',
+    '-1',
+    '1.5',
+    ' '
+  ])
 })
 
 test('protocol mutation applies every scheme family', t => {

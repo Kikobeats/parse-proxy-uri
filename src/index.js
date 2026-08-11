@@ -91,14 +91,97 @@ const writeProtocol = function (value) {
   if (this.protocol !== value) throwInvalid(value)
 }
 
+// WHATWG host/port setters truncate or no-op on junk; reject anything that is
+// not a canonical hostname / host / port token before trusting the write.
+const SMUGGLE = /[/\\?#@]/
+
+const isCanonicalPortString = value => {
+  if (!/^\d{1,5}$/.test(value)) return false
+  const n = Number(value)
+  return n <= 65535 && String(n) === value
+}
+
+const splitHostValue = value => {
+  if (value.startsWith('[')) {
+    const end = value.indexOf(']')
+    if (end === -1) return null
+    const hostname = value.slice(0, end + 1)
+    const rest = value.slice(end + 1)
+    if (rest === '') return { hostname, port: null }
+    if (!rest.startsWith(':')) return null
+    return { hostname, port: rest.slice(1) }
+  }
+  const idx = value.indexOf(':')
+  if (idx === -1) return { hostname: value, port: null }
+  return { hostname: value.slice(0, idx), port: value.slice(idx + 1) }
+}
+
+const isBracketedIPv6 = hostname =>
+  hostname.startsWith('[') && hostname.endsWith(']')
+
+const hasHostSmuggle = value =>
+  !value || SMUGGLE.test(value) || hasControlChars(value)
+
+// Dual-probe: a true no-op leaves two different bases unchanged.
+const appliedHostname = value => {
+  const a = new URL('http://a.invalid')
+  const b = new URL('http://b.invalid')
+  URL_ACCESSOR.hostname.set.call(a, value)
+  URL_ACCESSOR.hostname.set.call(b, value)
+  if (a.hostname !== b.hostname) return null
+  return a.hostname
+}
+
+const writeHostname = function (value) {
+  value = String(value)
+  if (hasHostSmuggle(value)) throwInvalid(value)
+  if (value.includes(':') && !isBracketedIPv6(value)) throwInvalid(value)
+  URL_ACCESSOR.hostname.set.call(this, value)
+  const hostname = appliedHostname(value)
+  if (!hostname || hostname !== this.hostname) throwInvalid(value)
+}
+
+const writeHost = function (value) {
+  value = String(value)
+  if (hasHostSmuggle(value)) throwInvalid(value)
+  const parts = splitHostValue(value)
+  if (!parts || !parts.hostname) throwInvalid(value)
+  if (parts.hostname.includes(':') && !isBracketedIPv6(parts.hostname)) {
+    throwInvalid(value)
+  }
+  // `foo:` keeps the previous port — require an omitted or canonical port.
+  if (parts.port !== null && !isCanonicalPortString(parts.port)) {
+    throwInvalid(value)
+  }
+  URL_ACCESSOR.host.set.call(this, value)
+  const hostname = appliedHostname(parts.hostname)
+  if (!hostname || hostname !== this.hostname) throwInvalid(value)
+  if (parts.port !== null && this.port !== parts.port && this.port !== '') {
+    throwInvalid(value)
+  }
+}
+
+const writePort = function (value) {
+  value = String(value)
+  if (value !== '' && !isCanonicalPortString(value)) throwInvalid(value)
+  URL_ACCESSOR.port.set.call(this, value)
+  // Default ports elide to "" (e.g. http + "80"); anything else must stick.
+  if (value === '') {
+    if (this.port !== '') throwInvalid(value)
+  } else if (this.port !== value && this.port !== '') {
+    throwInvalid(value)
+  }
+}
+
 // Without `authority` the write cannot name a host, so the loop holds it to the
 // hostname it had going in.
 const MUTATION = {
   username: { encode: encodePercents },
   password: { encode: encodePercents },
   href: { authority: rawAuthority },
-  host: { authority: String },
-  hostname: { authority: String },
+  host: { authority: String, write: writeHost },
+  hostname: { authority: String, write: writeHostname },
+  port: { write: writePort },
   protocol: { write: writeProtocol }
 }
 
