@@ -151,6 +151,23 @@ class ProxyURL extends URL {
   }
 }
 
+// WHATWG setters coerce via ToString, so `hostname = null` becomes host
+// "null" and quietly retargets the proxy (credentials and all). Require a
+// string — except `port`, where an integer in range is unambiguous.
+const asMutationString = (key, value) => {
+  if (typeof value === 'string') return value
+  if (
+    key === 'port' &&
+    typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value <= 65535
+  ) {
+    return String(value)
+  }
+  throwInvalid(value)
+}
+
 for (const key of Object.keys(URL_ACCESSOR)) {
   const { get, set } = URL_ACCESSOR[key]
   const { encode, authority, write = set } = MUTATION[key] ?? {}
@@ -161,6 +178,7 @@ for (const key of Object.keys(URL_ACCESSOR)) {
     set (value) {
       const previous = HREF.get.call(this)
       try {
+        value = asMutationString(key, value)
         const requested = authority ? authority(value) : this.hostname
         write.call(this, encode ? encode(value) : value)
         assertValidProxy(this, requested)

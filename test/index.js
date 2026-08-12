@@ -310,6 +310,22 @@ test('host mutation accepts canonical hosts', t => {
   t.is(parsedProxy.auth, 'alice:TopSecret')
 })
 
+test('mutations reject ToString coercion of non-strings', t => {
+  // URL setters coerce via ToString, so `hostname = null` would become the
+  // DNS label "null" and ship credentials there. Refuse anything that is not
+  // already a string (port still accepts an in-range integer).
+  assertRejectedMutations(t, 'hostname', [null, undefined, true, false, NaN])
+  assertRejectedMutations(t, 'host', [null, undefined, false])
+  assertRejectedMutations(t, 'protocol', [null, undefined])
+  assertRejectedMutations(t, 'username', [null, undefined, 0])
+  assertRejectedMutations(t, 'password', [null, undefined, true])
+  assertRejectedMutations(t, 'port', [null, undefined, 1.5, -1, 65536])
+
+  const parsedProxy = parseProxy(TRUSTED)
+  parsedProxy.port = 9999
+  t.is(parsedProxy.toString(), 'http://alice:TopSecret@trusted.proxy:9999')
+})
+
 test('path/query/hash mutation is rejected', t => {
   assertRejectedMutations(t, 'pathname', ['/extra', 'extra'])
   assertRejectedMutations(t, 'search', ['?x=1', 'x=1'])
