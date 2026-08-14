@@ -82,12 +82,29 @@ const rawAuthority = proxy => {
   return proxy.slice(schemeEnd + 3)
 }
 
-// WHATWG ignores special↔non-special protocol switches; href accepts them, so
-// the scheme is spliced onto the current href and everything else re-validated.
+// WHATWG href drops the scheme's default port, so splicing onto it would
+// retarget `http://proxy:80` → `socks5://proxy` (SOCKS clients use 1080).
+const DEFAULT_PORT = {
+  'ftp:': '21',
+  'http:': '80',
+  'https:': '443',
+  'ws:': '80',
+  'wss:': '443'
+}
+
 const writeProtocol = function (value) {
   value = String(value).toLowerCase()
   if (!value.endsWith(':')) value += ':'
-  HREF.set.call(this, `${value}//${rawAuthority(HREF.get.call(this))}`)
+  let authority = rawAuthority(HREF.get.call(this))
+  const implicitPort = DEFAULT_PORT[this.protocol]
+  if (implicitPort && !this.port) {
+    const pathIndex = authority.search(PATH_START)
+    authority =
+      pathIndex === -1
+        ? `${authority}:${implicitPort}`
+        : `${authority.slice(0, pathIndex)}:${implicitPort}${authority.slice(pathIndex)}`
+  }
+  HREF.set.call(this, `${value}//${authority}`)
   if (this.protocol !== value) throwInvalid(value)
 }
 

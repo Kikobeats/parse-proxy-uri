@@ -386,6 +386,35 @@ test('protocol mutation applies every scheme family', t => {
   }
 })
 
+test('protocol mutation keeps a scheme-default port', t => {
+  // WHATWG href omits http:80 / https:443 / ftp:21, so a naive scheme splice
+  // would drop the port the proxy is actually listening on.
+  const http80 = parseProxy('http://alice:TopSecret@proxy.example:80')
+  http80.protocol = 'socks5:'
+  t.is(http80.port, '80')
+  t.is(http80.toString(), 'socks5://alice:TopSecret@proxy.example:80')
+
+  const https443 = parseProxy('https://alice:TopSecret@proxy.example:443')
+  https443.protocol = 'http:'
+  t.is(https443.port, '443')
+  t.is(https443.toString(), 'http://alice:TopSecret@proxy.example:443')
+
+  const httpBare = parseProxy('http://proxy.example')
+  httpBare.protocol = 'socks5:'
+  t.is(httpBare.port, '80')
+  t.is(httpBare.toString(), 'socks5://proxy.example:80')
+
+  const ipv6 = parseProxy('http://[::1]:80')
+  ipv6.protocol = 'socks5:'
+  t.is(ipv6.port, '80')
+  t.is(ipv6.toString(), 'socks5://[::1]:80')
+
+  const ftp21 = parseProxy('ftp://proxy.example:21')
+  ftp21.protocol = 'socks5:'
+  t.is(ftp21.port, '21')
+  t.is(ftp21.toString(), 'socks5://proxy.example:21')
+})
+
 test('protocol mutation cannot smuggle in an IPv4 rewrite', t => {
   // Only special schemes normalize integer hosts, so switching into one would
   // silently retarget a proxy the constructor accepts as an opaque name.
