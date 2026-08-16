@@ -99,12 +99,9 @@ const writeProtocol = function (value) {
   const implicitPort = DEFAULT_PORT[this.protocol]
   if (implicitPort && !this.port) {
     const pathIndex = authority.search(PATH_START)
-    authority =
-      pathIndex === -1
-        ? `${authority}:${implicitPort}`
-        : `${authority.slice(0, pathIndex)}:${implicitPort}${authority.slice(
-          pathIndex
-        )}`
+    const host = pathIndex === -1 ? authority : authority.slice(0, pathIndex)
+    const path = pathIndex === -1 ? '' : authority.slice(pathIndex)
+    authority = `${host}:${implicitPort}${path}`
   }
   HREF.set.call(this, `${value}//${authority}`)
   if (this.protocol !== value) throwInvalid(value)
@@ -114,11 +111,8 @@ const writeProtocol = function (value) {
 // not a canonical hostname / host / port token before trusting the write.
 const SMUGGLE = /[/\\?#@]/
 
-const isCanonicalPortString = value => {
-  if (!/^\d{1,5}$/.test(value)) return false
-  const n = Number(value)
-  return n <= 65535 && String(n) === value
-}
+const isCanonicalPortString = value =>
+  /^(?:0|[1-9]\d{0,4})$/.test(value) && Number(value) <= 65535
 
 const splitHostValue = value => {
   if (value.startsWith('[')) {
@@ -130,9 +124,10 @@ const splitHostValue = value => {
     if (!rest.startsWith(':')) return null
     return { hostname, port: rest.slice(1) }
   }
-  const idx = value.indexOf(':')
-  if (idx === -1) return { hostname: value, port: null }
-  return { hostname: value.slice(0, idx), port: value.slice(idx + 1) }
+  const colon = value.indexOf(':')
+  const hostname = colon === -1 ? value : value.slice(0, colon)
+  if (!hostname) return null
+  return { hostname, port: colon === -1 ? null : value.slice(colon + 1) }
 }
 
 const isBracketedIPv6 = hostname =>
@@ -162,10 +157,7 @@ const writeHostname = function (value) {
 const writeHost = function (value) {
   if (hasHostSmuggle(value)) throwInvalid(value)
   const parts = splitHostValue(value)
-  if (!parts || !parts.hostname) throwInvalid(value)
-  if (parts.hostname.includes(':') && !isBracketedIPv6(parts.hostname)) {
-    throwInvalid(value)
-  }
+  if (!parts) throwInvalid(value)
   // `foo:` keeps the previous port — require an omitted or canonical port.
   if (parts.port !== null && !isCanonicalPortString(parts.port)) {
     throwInvalid(value)
@@ -182,11 +174,7 @@ const writePort = function (value) {
   if (value !== '' && !isCanonicalPortString(value)) throwInvalid(value)
   URL_ACCESSOR.port.set.call(this, value)
   // Default ports elide to "" (e.g. http + "80"); anything else must stick.
-  if (value === '') {
-    if (this.port !== '') throwInvalid(value)
-  } else if (this.port !== value && this.port !== '') {
-    throwInvalid(value)
-  }
+  if (this.port !== value && this.port !== '') throwInvalid(value)
 }
 
 // Without `authority` the write cannot name a host, so the loop holds it to the
@@ -257,7 +245,6 @@ const asMutationString = (key, value) => {
   if (typeof value === 'string') return value
   if (
     key === 'port' &&
-    typeof value === 'number' &&
     Number.isInteger(value) &&
     value >= 0 &&
     value <= 65535
@@ -285,7 +272,9 @@ for (const key of Object.keys(URL_ACCESSOR)) {
         const requested = authority ? authority(value) : previousHostname
         write.call(this, encode ? encode(value) : value)
         assertValidProxy(this, requested)
-        if (!authority && this.hostname !== previousHostname) { throwInvalid(value) }
+        if (!authority && this.hostname !== previousHostname) {
+          throwInvalid(value)
+        }
       } catch (_) {
         HREF.set.call(this, previous)
         throwInvalid(value)
