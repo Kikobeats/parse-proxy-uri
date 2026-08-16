@@ -82,13 +82,99 @@ const rawAuthority = proxy => {
   return proxy.slice(schemeEnd + 3)
 }
 
-// WHATWG ignores special↔non-special protocol switches; href accepts them, so
-// the scheme is spliced onto the current href and everything else re-validated.
+// WHATWG href drops the scheme's default port, so splicing onto it would
+// retarget `http://proxy:80` → `socks5://proxy` (SOCKS clients use 1080).
+const DEFAULT_PORT = {
+  'ftp:': '21',
+  'http:': '80',
+  'https:': '443',
+  'ws:': '80',
+  'wss:': '443'
+}
+
 const writeProtocol = function (value) {
-  value = String(value).toLowerCase()
+  value = value.toLowerCase()
   if (!value.endsWith(':')) value += ':'
-  HREF.set.call(this, `${value}//${rawAuthority(HREF.get.call(this))}`)
+  let authority = rawAuthority(HREF.get.call(this))
+  const implicitPort = DEFAULT_PORT[this.protocol]
+  if (implicitPort && !this.port) {
+    const pathIndex = authority.search(PATH_START)
+    const host = pathIndex === -1 ? authority : authority.slice(0, pathIndex)
+    const path = pathIndex === -1 ? '' : authority.slice(pathIndex)
+    authority = `${host}:${implicitPort}${path}`
+  }
+  HREF.set.call(this, `${value}//${authority}`)
   if (this.protocol !== value) throwInvalid(value)
+}
+
+// WHATWG host/port setters truncate or no-op on junk; reject anything that is
+// not a canonical hostname / host / port token before trusting the write.
+const SMUGGLE = /[/\\?#@]/
+
+const isCanonicalPortString = value =>
+  /^(?:0|[1-9]\d{0,4})$/.test(value) && Number(value) <= 65535
+
+const splitHostValue = value => {
+  if (value.startsWith('[')) {
+    const end = value.indexOf(']')
+    if (end === -1) return null
+    const hostname = value.slice(0, end + 1)
+    const rest = value.slice(end + 1)
+    if (rest === '') return { hostname, port: null }
+    if (!rest.startsWith(':')) return null
+    return { hostname, port: rest.slice(1) }
+  }
+  const colon = value.indexOf(':')
+  const hostname = colon === -1 ? value : value.slice(0, colon)
+  if (!hostname) return null
+  return { hostname, port: colon === -1 ? null : value.slice(colon + 1) }
+}
+
+const isBracketedIPv6 = hostname =>
+  hostname.startsWith('[') && hostname.endsWith(']')
+
+const hasHostSmuggle = value =>
+  !value || SMUGGLE.test(value) || hasControlChars(value)
+
+// Dual-probe: a true no-op leaves two different bases unchanged.
+const appliedHostname = value => {
+  const a = new URL('http://a.invalid')
+  const b = new URL('http://b.invalid')
+  URL_ACCESSOR.hostname.set.call(a, value)
+  URL_ACCESSOR.hostname.set.call(b, value)
+  if (a.hostname !== b.hostname) return null
+  return a.hostname
+}
+
+const writeHostname = function (value) {
+  if (hasHostSmuggle(value)) throwInvalid(value)
+  if (value.includes(':') && !isBracketedIPv6(value)) throwInvalid(value)
+  URL_ACCESSOR.hostname.set.call(this, value)
+  const hostname = appliedHostname(value)
+  if (!hostname || hostname !== this.hostname) throwInvalid(value)
+}
+
+const writeHost = function (value) {
+  if (hasHostSmuggle(value)) throwInvalid(value)
+  const parts = splitHostValue(value)
+  if (!parts) throwInvalid(value)
+  // `foo:` keeps the previous port — require an omitted or canonical port.
+  if (parts.port !== null && !isCanonicalPortString(parts.port)) {
+    throwInvalid(value)
+  }
+  URL_ACCESSOR.host.set.call(this, value)
+  const hostname = appliedHostname(parts.hostname)
+  if (!hostname || hostname !== this.hostname) throwInvalid(value)
+  if (parts.port !== null && this.port !== parts.port && this.port !== '') {
+    throwInvalid(value)
+  }
+}
+
+const writePort = function (value) {
+  if (value !== '' && !isCanonicalPortString(value)) throwInvalid(value)
+  URL_ACCESSOR.port.set.call(this, value)
+  // Default ports elide to "" (e.g. http + "80"); anything else must stick.
+  if (this.port !== value && this.port !== '') throwInvalid(value)
 }
 
 // Without `authority` the write cannot name a host, so the loop holds it to the
@@ -97,8 +183,9 @@ const MUTATION = {
   username: { encode: encodePercents },
   password: { encode: encodePercents },
   href: { authority: rawAuthority },
-  host: { authority: String },
-  hostname: { authority: String },
+  host: { authority: String, write: writeHost },
+  hostname: { authority: String, write: writeHostname },
+  port: { write: writePort },
   protocol: { write: writeProtocol }
 }
 
@@ -151,6 +238,22 @@ class ProxyURL extends URL {
   }
 }
 
+// WHATWG setters coerce via ToString, so `hostname = null` becomes host
+// "null" and quietly retargets the proxy (credentials and all). Require a
+// string — except `port`, where an integer in range is unambiguous.
+const asMutationString = (key, value) => {
+  if (typeof value === 'string') return value
+  if (
+    key === 'port' &&
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value <= 65535
+  ) {
+    return String(value)
+  }
+  throwInvalid(value)
+}
+
 for (const key of Object.keys(URL_ACCESSOR)) {
   const { get, set } = URL_ACCESSOR[key]
   const { encode, authority, write = set } = MUTATION[key] ?? {}
@@ -161,9 +264,17 @@ for (const key of Object.keys(URL_ACCESSOR)) {
     set (value) {
       const previous = HREF.get.call(this)
       try {
-        const requested = authority ? authority(value) : this.hostname
+        value = asMutationString(key, value)
+        // Host-blind writes must keep the hostname they had going in —
+        // special schemes percent-decode and IPv4-normalize, so a socks
+        // opaque name like `127%2e0%2e0%2e1` would otherwise become loopback.
+        const previousHostname = this.hostname
+        const requested = authority ? authority(value) : previousHostname
         write.call(this, encode ? encode(value) : value)
         assertValidProxy(this, requested)
+        if (!authority && this.hostname !== previousHostname) {
+          throwInvalid(value)
+        }
       } catch (_) {
         HREF.set.call(this, previous)
         throwInvalid(value)

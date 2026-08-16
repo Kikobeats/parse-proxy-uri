@@ -299,6 +299,26 @@ test('host mutation rejects malformed percent-escapes', t => {
   t.is(parsedProxy.toString(), 'http://127.0.0.1:8080')
 })
 
+test('host mutation rejects WHATWG truncation and no-ops', t => {
+  // WHATWG host/hostname setters truncate at @, /, or junk port suffixes and
+  // silently ignore some invalid tokens — ProxyURL must reject and roll back.
+  assertRejectedMutations(t, 'hostname', [
+    'evil.example/admin',
+    'new.proxy:9000',
+    '127.0.0.%zz',
+    '',
+    '::1'
+  ])
+  assertRejectedMutations(t, 'host', [
+    'user:pass@evil.example:1',
+    'evil.example:9000@kept.proxy:1',
+    'evil.example:9000foo',
+    'evil.example:',
+    '[::1]foo',
+    ''
+  ])
+})
+
 test('host mutation accepts canonical hosts', t => {
   const parsedProxy = parseProxy(TRUSTED)
 
@@ -308,6 +328,28 @@ test('host mutation accepts canonical hosts', t => {
   parsedProxy.host = '127.0.0.1:9443'
   t.is(parsedProxy.toString(), 'http://alice:TopSecret@127.0.0.1:9443')
   t.is(parsedProxy.auth, 'alice:TopSecret')
+
+  parsedProxy.host = '[::1]:1080'
+  t.is(parsedProxy.toString(), 'http://alice:TopSecret@[::1]:1080')
+
+  parsedProxy.hostname = '[::1]'
+  t.is(parsedProxy.toString(), 'http://alice:TopSecret@[::1]:1080')
+})
+
+test('mutations reject ToString coercion of non-strings', t => {
+  // URL setters coerce via ToString, so `hostname = null` would become the
+  // DNS label "null" and ship credentials there. Refuse anything that is not
+  // already a string (port still accepts an in-range integer).
+  assertRejectedMutations(t, 'hostname', [null, undefined, true, false, NaN])
+  assertRejectedMutations(t, 'host', [null, undefined, false])
+  assertRejectedMutations(t, 'protocol', [null, undefined])
+  assertRejectedMutations(t, 'username', [null, undefined, 0])
+  assertRejectedMutations(t, 'password', [null, undefined, true])
+  assertRejectedMutations(t, 'port', [null, undefined, 1.5, -1, 65536])
+
+  const parsedProxy = parseProxy(TRUSTED)
+  parsedProxy.port = 9999
+  t.is(parsedProxy.toString(), 'http://alice:TopSecret@trusted.proxy:9999')
 })
 
 test('path/query/hash mutation is rejected', t => {
@@ -362,6 +404,18 @@ test('port mutation stays within proxy shape', t => {
   t.is(parsedProxy.auth, 'alice:TopSecret')
 })
 
+test('port mutation rejects truncated or out-of-range values', t => {
+  assertRejectedMutations(t, 'port', [
+    '0x50',
+    '8080foo',
+    '08',
+    '65536',
+    '-1',
+    '1.5',
+    ' '
+  ])
+})
+
 test('protocol mutation applies every scheme family', t => {
   const parsedProxy = parseProxy(TRUSTED)
 
@@ -386,13 +440,45 @@ test('protocol mutation applies every scheme family', t => {
   }
 })
 
+test('protocol mutation keeps a scheme-default port', t => {
+  // WHATWG href omits http:80 / https:443 / ftp:21, so a naive scheme splice
+  // would drop the port the proxy is actually listening on.
+  const http80 = parseProxy('http://alice:TopSecret@proxy.example:80')
+  http80.protocol = 'socks5:'
+  t.is(http80.port, '80')
+  t.is(http80.toString(), 'socks5://alice:TopSecret@proxy.example:80')
+
+  const https443 = parseProxy('https://alice:TopSecret@proxy.example:443')
+  https443.protocol = 'http:'
+  t.is(https443.port, '443')
+  t.is(https443.toString(), 'http://alice:TopSecret@proxy.example:443')
+
+  const httpBare = parseProxy('http://proxy.example')
+  httpBare.protocol = 'socks5:'
+  t.is(httpBare.port, '80')
+  t.is(httpBare.toString(), 'socks5://proxy.example:80')
+
+  const ipv6 = parseProxy('http://[::1]:80')
+  ipv6.protocol = 'socks5:'
+  t.is(ipv6.port, '80')
+  t.is(ipv6.toString(), 'socks5://[::1]:80')
+
+  const ftp21 = parseProxy('ftp://proxy.example:21')
+  ftp21.protocol = 'socks5:'
+  t.is(ftp21.port, '21')
+  t.is(ftp21.toString(), 'socks5://proxy.example:21')
+})
+
 test('protocol mutation cannot smuggle in an IPv4 rewrite', t => {
-  // Only special schemes normalize integer hosts, so switching into one would
-  // silently retarget a proxy the constructor accepts as an opaque name.
+  // Only special schemes normalize integer / percent-decoded hosts, so
+  // switching into one would silently retarget a proxy the constructor
+  // accepts as an opaque name.
   const opaque = [
     'socks5://2130706433',
     'socks5://0x7f000001',
-    'socks5://127.1'
+    'socks5://127.1',
+    'socks5://127%2e0%2e0%2e1:8080',
+    'socks5://%31%32%37%2e%30%2e%30%2e%31:8080'
   ]
   for (const proxy of opaque) {
     assertRejectedMutations(t, 'protocol', ['http:', 'https:'], proxy)
