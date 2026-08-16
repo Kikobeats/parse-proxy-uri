@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### 2.0.14 (2026-08-16)
+
+
+### Bug Fixes
+
+* harden ProxyURL mutations ([#33](https://github.com/Kikobeats/parse-proxy-uri/issues/33)) ([685e08f](https://github.com/Kikobeats/parse-proxy-uri/commit/685e08f122a10187144939a0b232647c08fcd3e7)), closes [#29](https://github.com/Kikobeats/parse-proxy-uri/issues/29) [#30](https://github.com/Kikobeats/parse-proxy-uri/issues/30) [#31](https://github.com/Kikobeats/parse-proxy-uri/issues/31) [#32](https://github.com/Kikobeats/parse-proxy-uri/issues/32)
+
 ### 2.0.13 (2026-08-09)
 
 
