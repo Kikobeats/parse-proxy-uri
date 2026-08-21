@@ -68,7 +68,8 @@ const PATH_START = /[/?#]/
 const hostToken = authority => {
   const pathIndex = authority.search(PATH_START)
   if (pathIndex !== -1) authority = authority.slice(0, pathIndex)
-  const userinfoEnd = authority.indexOf('@')
+  // WHATWG takes the last `@` as the userinfo delimiter (`user:p@ss@1.2.3.4`).
+  const userinfoEnd = authority.lastIndexOf('@')
   if (userinfoEnd !== -1) authority = authority.slice(userinfoEnd + 1)
   const portStart = authority.indexOf(':')
   return portStart === -1 ? authority : authority.slice(0, portStart)

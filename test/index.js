@@ -652,6 +652,25 @@ test('accept canonical dotted-decimal IPv4 hosts', t => {
   t.is(parsedProxy.toString(), 'http://127.0.0.1:8080')
 })
 
+test('accept IPv4 hosts when credentials contain a raw @', t => {
+  // WHATWG treats the last `@` as the userinfo delimiter. The IPv4
+  // rewrite check must do the same, or `user:p@ss@127.0.0.1` is
+  // rejected while the identical credentials on a hostname work.
+  const parsedProxy = parseProxy('http://user:p@ss@127.0.0.1:8080')
+  t.is(parsedProxy.hostname, '127.0.0.1')
+  t.is(parsedProxy.auth, 'user:p@ss')
+  t.is(parsedProxy.toString(), 'http://user:p%40ss@127.0.0.1:8080')
+
+  const ipv6 = parseProxy('http://user:p@ss@[::1]:8080')
+  t.is(ipv6.hostname, '[::1]')
+  t.is(ipv6.auth, 'user:p@ss')
+
+  parsedProxy.href = 'http://alice:p@ss@8.8.8.8:3128'
+  t.is(parsedProxy.hostname, '8.8.8.8')
+  t.is(parsedProxy.auth, 'alice:p@ss')
+  t.is(parsedProxy.toString(), 'http://alice:p%40ss@8.8.8.8:3128')
+})
+
 test('mutations that cannot rename an IPv4 host reuse the parsed hostname', t => {
   const parsedProxy = parseProxy('http://127.0.0.1:8080')
 
