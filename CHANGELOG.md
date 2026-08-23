@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### 2.0.15 (2026-08-23)
+
+
+### Bug Fixes
+
+* parse IPv4 proxy URIs with @ in credentials ([#34](https://github.com/Kikobeats/parse-proxy-uri/issues/34)) ([e8cc460](https://github.com/Kikobeats/parse-proxy-uri/commit/e8cc460f983c13fb5b2ff2dfc2cda0ab89ab7c60))
+
 ### 2.0.14 (2026-08-16)
 
 
