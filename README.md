@@ -1,8 +1,8 @@
 # parse-proxy-uri
 
-![Last version](https://img.shields.io/github/tag/Kikobeats/parse-proxy-uri.svg?style=flat-square)
-[![Coverage Status](https://img.shields.io/coveralls/Kikobeats/parse-proxy-uri.svg?style=flat-square)](https://coveralls.io/github/Kikobeats/parse-proxy-uri)
-[![NPM Status](https://img.shields.io/npm/dm/parse-proxy-uri.svg?style=flat-square)](https://www.npmjs.org/package/parse-proxy-uri)
+[![Last version](https://img.shields.io/github/v/tag/Kikobeats/parse-proxy-uri?style=flat-square)](https://github.com/Kikobeats/parse-proxy-uri/releases)
+[![Coverage Status](https://img.shields.io/coverallsCoverage/github/Kikobeats/parse-proxy-uri?style=flat-square)](https://coveralls.io/github/Kikobeats/parse-proxy-uri)
+[![NPM Status](https://img.shields.io/npm/dm/parse-proxy-uri?style=flat-square)](https://www.npmjs.com/package/parse-proxy-uri)
 
 > Lightweight module for parsing a proxy URI.
 
