@@ -244,6 +244,18 @@ test('reject host code points the URL parser drops', t => {
   t.is(socks.hostname, 'trusted%EF%BB%BF.evil.com')
 })
 
+test('opaque hosts keep non-UTF-8 percent bytes', t => {
+  // `decodeURIComponent` throws on these. The URL parser still accepts them
+  // as an opaque host, so they must not fail the ignored-mark scan.
+  const parsedProxy = parseProxy('socks5://user:pass@proxy%FF.example:1080')
+  t.is(parsedProxy.hostname, 'proxy%FF.example')
+  t.is(parsedProxy.auth, 'user:pass')
+  t.is(parsedProxy.toString(), 'socks5://user:pass@proxy%FF.example:1080')
+
+  const overlong = parseProxy('socks5://%C0%80.example:1080')
+  t.is(overlong.hostname, '%C0%80.example')
+})
+
 test('username/password match WHATWG encoding for URL consumers', t => {
   const parsedProxy = parseProxy(
     'http://user%253Aname:100%25pure@proxy.example:8080'

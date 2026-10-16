@@ -67,6 +67,17 @@ const decodeOrThrow = value => {
   }
 }
 
+// Opaque hosts may contain `%HH` bytes that are not UTF-8. `decodeURIComponent`
+// throws, but the URL parser keeps them. Those bytes are not ignored marks.
+const decodeHost = value => {
+  if (!value.includes('%')) return value
+  try {
+    return decodeURIComponent(value)
+  } catch (_) {
+    return null
+  }
+}
+
 // `isIP` matches IPv4 only as a dotted-quad, which always ends in a digit.
 const isCanonicalIPv4 = hostname => {
   const last = hostname.charCodeAt(hostname.length - 1)
@@ -82,7 +93,9 @@ const dropsIgnoredHostCodePoint = (protocol, token, hostname) => {
     if (code > 0x7f) {
       const without = token.slice(0, i) + token.slice(i + width)
       try {
-        if (new URL(`${protocol}//${without}`).hostname === hostname) { return true }
+        if (new URL(`${protocol}//${without}`).hostname === hostname) {
+          return true
+        }
       } catch (_) {}
     }
     i += width
@@ -229,7 +242,7 @@ const assertValidProxy = (url, authority) => {
   const { hostname, pathname } = url
   const user = decodeOrThrow(url.username)
   const pass = decodeOrThrow(url.password)
-  const decodedHost = decodeOrThrow(hostToken(authority))
+  const decodedHost = decodeHost(hostToken(authority))
 
   if (
     !hostname ||
@@ -239,7 +252,8 @@ const assertValidProxy = (url, authority) => {
     hasControlChars(user) ||
     hasControlChars(pass) ||
     (isCanonicalIPv4(hostname) && decodedHost !== hostname) ||
-    dropsIgnoredHostCodePoint(url.protocol, decodedHost, hostname)
+    (decodedHost !== null &&
+      dropsIgnoredHostCodePoint(url.protocol, decodedHost, hostname))
   ) {
     throwInvalid(url.href)
   }
