@@ -181,6 +181,41 @@ test('reject control characters in credentials', t => {
   ])
 })
 
+test('reject embedded tabs and newlines that rewrite the proxy', t => {
+  // WHATWG strips these before the credential check, so a raw newline can
+  // move `@` (credentials follow the new host), join a password, or join a port.
+  assertInvalidProxies(t, [
+    'http://alice:secret@trusted.example\n@evil.com:8080',
+    'http://alice:secret@trusted.example\r@evil.com:8080',
+    'http://alice:secret@trusted.example\t@evil.com:8080',
+    'http://alice:secret@trusted.example\r\n@evil.com:8080',
+    'http://alice:se\ncret@trusted.example:8080',
+    'http://alice:secret@trusted.example:80\n80',
+    'http://alice:secret@127.0.0.1\n.evil.com:8080',
+    'socks5://alice:secret@trusted.example\n@evil.com:1080'
+  ])
+
+  const trailing = parseProxy('http://alice:secret@trusted.example:8080\r\n')
+  t.is(trailing.toString(), 'http://alice:secret@trusted.example:8080')
+  t.is(trailing.auth, 'alice:secret')
+
+  const leading = parseProxy('\nhttp://alice:secret@trusted.example:8080')
+  t.is(leading.toString(), 'http://alice:secret@trusted.example:8080')
+
+  const parsedProxy = parseProxy('http://alice:secret@trusted.example:8080')
+  const error = t.throws(() => {
+    parsedProxy.href = 'http://alice:secret@trusted.example\n@evil.com:8080'
+  })
+  t.is(error.code, 'INVALID_PROXY')
+  t.is(parsedProxy.toString(), 'http://alice:secret@trusted.example:8080')
+  t.is(parsedProxy.hostname, 'trusted.example')
+  t.is(parsedProxy.auth, 'alice:secret')
+
+  parsedProxy.href = 'http://bob:OtherSecret@other.proxy:9443\n'
+  t.is(parsedProxy.toString(), 'http://bob:OtherSecret@other.proxy:9443')
+  t.is(parsedProxy.auth, 'bob:OtherSecret')
+})
+
 test('username/password match WHATWG encoding for URL consumers', t => {
   const parsedProxy = parseProxy(
     'http://user%253Aname:100%25pure@proxy.example:8080'

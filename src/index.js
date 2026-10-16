@@ -41,6 +41,23 @@ const hasControlChars = value => {
   return false
 }
 
+// WHATWG deletes ASCII tab and newlines before parsing, so they never show up
+// in the credential or host checks. Embedded ones still rewrite the URI:
+// `trusted.example\n@evil.com` moves the host, `se\ncret` changes the
+// password, and `:80\n80` changes the port. Leading and trailing ones only
+// trim, which is how a pasted proxy string is usually spelled.
+const isTabOrNewline = code => code === 0x09 || code === 0x0a || code === 0x0d
+
+const assertNoEmbeddedTabOrNewline = value => {
+  let start = 0
+  let end = value.length
+  while (start < end && isTabOrNewline(value.charCodeAt(start))) start++
+  while (end > start && isTabOrNewline(value.charCodeAt(end - 1))) end--
+  for (let i = start; i < end; i++) {
+    if (isTabOrNewline(value.charCodeAt(i))) throwInvalid(value)
+  }
+}
+
 const decodeOrThrow = value => {
   if (!value.includes('%')) return value
   try {
@@ -78,6 +95,7 @@ const hostToken = authority => {
 // Without `://`, WHATWG reads `host:port` / `http:8080` as the wrong host.
 const rawAuthority = proxy => {
   proxy = String(proxy)
+  assertNoEmbeddedTabOrNewline(proxy)
   const schemeEnd = proxy.indexOf('://')
   if (schemeEnd === -1) throwInvalid(proxy)
   return proxy.slice(schemeEnd + 3)
