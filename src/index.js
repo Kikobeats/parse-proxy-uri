@@ -73,6 +73,23 @@ const isCanonicalIPv4 = hostname => {
   return last >= 48 && last <= 57 && isIP(hostname) === 4
 }
 
+// Host parsing deletes these (U+FEFF, U+200B, soft hyphen) and joins the
+// labels around them. ASCII no-ops are IPv4 dot-collapse and IPv6 compression.
+const dropsIgnoredHostCodePoint = (protocol, token, hostname) => {
+  for (let i = 0; i < token.length;) {
+    const code = token.codePointAt(i)
+    const width = code > 0xffff ? 2 : 1
+    if (code > 0x7f) {
+      const without = token.slice(0, i) + token.slice(i + width)
+      try {
+        if (new URL(`${protocol}//${without}`).hostname === hostname) { return true }
+      } catch (_) {}
+    }
+    i += width
+  }
+  return false
+}
+
 // WHATWG userinfo setters leave raw `%` alone, so encode it first.
 const PERCENT_SIGN = /%/g
 const encodePercents = value => {
@@ -212,6 +229,7 @@ const assertValidProxy = (url, authority) => {
   const { hostname, pathname } = url
   const user = decodeOrThrow(url.username)
   const pass = decodeOrThrow(url.password)
+  const decodedHost = decodeOrThrow(hostToken(authority))
 
   if (
     !hostname ||
@@ -220,8 +238,8 @@ const assertValidProxy = (url, authority) => {
     url.hash !== '' ||
     hasControlChars(user) ||
     hasControlChars(pass) ||
-    (isCanonicalIPv4(hostname) &&
-      decodeOrThrow(hostToken(authority)) !== hostname)
+    (isCanonicalIPv4(hostname) && decodedHost !== hostname) ||
+    dropsIgnoredHostCodePoint(url.protocol, decodedHost, hostname)
   ) {
     throwInvalid(url.href)
   }
