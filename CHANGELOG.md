@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### 2.0.17 (2026-10-16)
+
+
+### Bug Fixes
+
+* reject embedded tabs and newlines in proxy URIs ([#36](https://github.com/Kikobeats/parse-proxy-uri/issues/36)) ([2276569](https://github.com/Kikobeats/parse-proxy-uri/commit/2276569f7a96a03fad730b1ef46719bdd0832eef))
+
 ### 2.0.16 (2026-10-16)
 
 ### 2.0.15 (2026-08-23)
