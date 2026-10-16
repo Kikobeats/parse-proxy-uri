@@ -181,6 +181,81 @@ test('reject control characters in credentials', t => {
   ])
 })
 
+test('reject embedded tabs and newlines that rewrite the proxy', t => {
+  // WHATWG strips these before the credential check, so a raw newline can
+  // move `@` (credentials follow the new host), join a password, or join a port.
+  assertInvalidProxies(t, [
+    'http://alice:secret@trusted.example\n@evil.com:8080',
+    'http://alice:secret@trusted.example\r@evil.com:8080',
+    'http://alice:secret@trusted.example\t@evil.com:8080',
+    'http://alice:secret@trusted.example\r\n@evil.com:8080',
+    'http://alice:se\ncret@trusted.example:8080',
+    'http://alice:secret@trusted.example:80\n80',
+    'http://alice:secret@127.0.0.1\n.evil.com:8080',
+    'socks5://alice:secret@trusted.example\n@evil.com:1080'
+  ])
+
+  const trailing = parseProxy('http://alice:secret@trusted.example:8080\r\n')
+  t.is(trailing.toString(), 'http://alice:secret@trusted.example:8080')
+  t.is(trailing.auth, 'alice:secret')
+
+  const leading = parseProxy('\nhttp://alice:secret@trusted.example:8080')
+  t.is(leading.toString(), 'http://alice:secret@trusted.example:8080')
+
+  const parsedProxy = parseProxy('http://alice:secret@trusted.example:8080')
+  const error = t.throws(() => {
+    parsedProxy.href = 'http://alice:secret@trusted.example\n@evil.com:8080'
+  })
+  t.is(error.code, 'INVALID_PROXY')
+  t.is(parsedProxy.toString(), 'http://alice:secret@trusted.example:8080')
+  t.is(parsedProxy.hostname, 'trusted.example')
+  t.is(parsedProxy.auth, 'alice:secret')
+
+  parsedProxy.href = 'http://bob:OtherSecret@other.proxy:9443\n'
+  t.is(parsedProxy.toString(), 'http://bob:OtherSecret@other.proxy:9443')
+  t.is(parsedProxy.auth, 'bob:OtherSecret')
+})
+
+test('reject host code points the URL parser drops', t => {
+  // Deleted marks join the labels around them, so the saved host is the one
+  // the caller did not write. Percent-encoding does not bypass the decode.
+  assertInvalidProxies(t, [
+    'http://alice:secret@trusted\uFEFF.evil.com:8080',
+    'http://alice:secret@trusted\u200b.evil.com:8080',
+    'http://alice:secret@trusted\u00ad.evil.com:8080',
+    'http://alice:secret@trusted\u2060.evil.com:8080',
+    'http://alice:secret@trusted\u034f.evil.com:8080',
+    'http://alice:secret@127.0.0.1\uFEFF.evil.com:8080',
+    'http://alice:secret@trusted%EF%BB%BF.evil.com:8080',
+    'https://user:p@ss@trusted\uFEFF.evil.com:8080'
+  ])
+
+  const parsedProxy = parseProxy('http://alice:secret@trusted.example:8080')
+  const error = t.throws(() => {
+    parsedProxy.hostname = 'trusted\uFEFF.evil.com'
+  })
+  t.is(error.code, 'INVALID_PROXY')
+  t.is(parsedProxy.hostname, 'trusted.example')
+  t.is(parsedProxy.auth, 'alice:secret')
+
+  // Non-special hosts keep the mark in percent-encoded form, so it still
+  // names a different host than the joined one above.
+  const socks = parseProxy('socks5://alice:secret@trusted\uFEFF.evil.com:1080')
+  t.is(socks.hostname, 'trusted%EF%BB%BF.evil.com')
+})
+
+test('opaque hosts keep non-UTF-8 percent bytes', t => {
+  // `decodeURIComponent` throws on these. The URL parser still accepts them
+  // as an opaque host, so they must not fail the ignored-mark scan.
+  const parsedProxy = parseProxy('socks5://user:pass@proxy%FF.example:1080')
+  t.is(parsedProxy.hostname, 'proxy%FF.example')
+  t.is(parsedProxy.auth, 'user:pass')
+  t.is(parsedProxy.toString(), 'socks5://user:pass@proxy%FF.example:1080')
+
+  const overlong = parseProxy('socks5://%C0%80.example:1080')
+  t.is(overlong.hostname, '%C0%80.example')
+})
+
 test('username/password match WHATWG encoding for URL consumers', t => {
   const parsedProxy = parseProxy(
     'http://user%253Aname:100%25pure@proxy.example:8080'

@@ -41,6 +41,23 @@ const hasControlChars = value => {
   return false
 }
 
+// WHATWG deletes ASCII tab and newlines before parsing, so they never show up
+// in the credential or host checks. Embedded ones still rewrite the URI:
+// `trusted.example\n@evil.com` moves the host, `se\ncret` changes the
+// password, and `:80\n80` changes the port. Leading and trailing ones only
+// trim, which is how a pasted proxy string is usually spelled.
+const isTabOrNewline = code => code === 0x09 || code === 0x0a || code === 0x0d
+
+const assertNoEmbeddedTabOrNewline = value => {
+  let start = 0
+  let end = value.length
+  while (start < end && isTabOrNewline(value.charCodeAt(start))) start++
+  while (end > start && isTabOrNewline(value.charCodeAt(end - 1))) end--
+  for (let i = start; i < end; i++) {
+    if (isTabOrNewline(value.charCodeAt(i))) throwInvalid(value)
+  }
+}
+
 const decodeOrThrow = value => {
   if (!value.includes('%')) return value
   try {
@@ -50,10 +67,40 @@ const decodeOrThrow = value => {
   }
 }
 
+// Opaque hosts may contain `%HH` bytes that are not UTF-8. `decodeURIComponent`
+// throws, but the URL parser keeps them. Those bytes are not ignored marks.
+const decodeHost = value => {
+  if (!value.includes('%')) return value
+  try {
+    return decodeURIComponent(value)
+  } catch (_) {
+    return null
+  }
+}
+
 // `isIP` matches IPv4 only as a dotted-quad, which always ends in a digit.
 const isCanonicalIPv4 = hostname => {
   const last = hostname.charCodeAt(hostname.length - 1)
   return last >= 48 && last <= 57 && isIP(hostname) === 4
+}
+
+// Host parsing deletes these (U+FEFF, U+200B, soft hyphen) and joins the
+// labels around them. ASCII no-ops are IPv4 dot-collapse and IPv6 compression.
+const dropsIgnoredHostCodePoint = (protocol, token, hostname) => {
+  for (let i = 0; i < token.length;) {
+    const code = token.codePointAt(i)
+    const width = code > 0xffff ? 2 : 1
+    if (code > 0x7f) {
+      const without = token.slice(0, i) + token.slice(i + width)
+      try {
+        if (new URL(`${protocol}//${without}`).hostname === hostname) {
+          return true
+        }
+      } catch (_) {}
+    }
+    i += width
+  }
+  return false
 }
 
 // WHATWG userinfo setters leave raw `%` alone, so encode it first.
@@ -78,6 +125,7 @@ const hostToken = authority => {
 // Without `://`, WHATWG reads `host:port` / `http:8080` as the wrong host.
 const rawAuthority = proxy => {
   proxy = String(proxy)
+  assertNoEmbeddedTabOrNewline(proxy)
   const schemeEnd = proxy.indexOf('://')
   if (schemeEnd === -1) throwInvalid(proxy)
   return proxy.slice(schemeEnd + 3)
@@ -194,6 +242,7 @@ const assertValidProxy = (url, authority) => {
   const { hostname, pathname } = url
   const user = decodeOrThrow(url.username)
   const pass = decodeOrThrow(url.password)
+  const decodedHost = decodeHost(hostToken(authority))
 
   if (
     !hostname ||
@@ -202,8 +251,9 @@ const assertValidProxy = (url, authority) => {
     url.hash !== '' ||
     hasControlChars(user) ||
     hasControlChars(pass) ||
-    (isCanonicalIPv4(hostname) &&
-      decodeOrThrow(hostToken(authority)) !== hostname)
+    (isCanonicalIPv4(hostname) && decodedHost !== hostname) ||
+    (decodedHost !== null &&
+      dropsIgnoredHostCodePoint(url.protocol, decodedHost, hostname))
   ) {
     throwInvalid(url.href)
   }
