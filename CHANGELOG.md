@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### 2.0.19 (2026-10-28)
+
+
+### Bug Fixes
+
+* declare the real minimum Node.js version ([#38](https://github.com/Kikobeats/parse-proxy-uri/issues/38)) ([15c3fae](https://github.com/Kikobeats/parse-proxy-uri/commit/15c3faea3e83127da4bf3eaa65f835ac19e4f54a))
+
 ### 2.0.18 (2026-10-28)
 
 ### 2.0.17 (2026-10-16)
