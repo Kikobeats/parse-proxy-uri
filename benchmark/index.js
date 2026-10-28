@@ -47,14 +47,16 @@ const INVALID_PROXIES = [
 const TRUSTED = 'http://alice:TopSecret@trusted.proxy:8443'
 
 const MUTATIONS = [
-  ['hostname', 'other.proxy'],
-  ['port', '9443'],
-  ['host', 'third.proxy:7443'],
-  ['protocol', 'socks5'],
-  ['password', 'p@ss%word']
+  ['hostname', 'other.proxy', 'other.proxy'],
+  ['port', '9443', '9443'],
+  ['host', 'third.proxy:7443', 'third.proxy:7443'],
+  ['protocol', 'socks5', 'socks5:'],
+  ['password', 'p@ss%word', 'p%40ss%25word']
 ]
 
 const MUTATED = 'socks5://alice:p%40ss%25word@third.proxy:7443'
+
+const TOTAL_WRITES = MUTATION_ROUNDS * MUTATIONS.length
 
 const parseAll = (proxies, rounds) => {
   let parsed = 0
@@ -103,15 +105,20 @@ const mutationCase = {
   name: 'mutate host, port and credentials',
   extra: `${MUTATION_ROUNDS} proxies x ${MUTATIONS.length} guarded writes`,
   timed: () => {
+    let applied = 0
     let mutated = 0
     for (let round = 0; round < MUTATION_ROUNDS; round++) {
       const proxy = parseProxy(TRUSTED)
-      for (const [key, value] of MUTATIONS) proxy[key] = value
+      for (const [key, value, expected] of MUTATIONS) {
+        proxy[key] = value
+        if (proxy[key] === expected) applied++
+      }
       if (proxy.toString() === MUTATED) mutated++
     }
-    return mutated
+    return { applied, mutated }
   },
-  verify: mutated => mutated === MUTATION_ROUNDS
+  verify: ({ applied, mutated }) =>
+    applied === TOTAL_WRITES && mutated === MUTATION_ROUNDS
 }
 
 const CASES = [asciiCase, unicodeCase, invalidCase, mutationCase]
